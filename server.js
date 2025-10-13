@@ -57,7 +57,7 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     }
 
     imagePath = imageFile.path;
-    const threshold = parseInt(req.body.threshold) || 15;
+    const threshold = parseInt(req.body.threshold) || 1;
     
     console.log('🔍 Step 1: Detecting background color...');
 
