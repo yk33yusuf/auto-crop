@@ -37,7 +37,6 @@ app.get('/', (req, res) => {
   });
 });
 
-// Crop endpoint - akıllı arkaplan tespiti
 app.post('/crop', upload.single('image'), async (req, res) => {
   let imagePath;
   
@@ -58,49 +57,72 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     }
 
     imagePath = imageFile.path;
+    const threshold = parseInt(req.body.threshold) || 15;
     
-    console.log('🔍 Detecting background color...');
+    console.log('🔍 Step 1: Detecting background color...');
 
-    // Görseli oku
+    // Arkaplan rengini tespit et
     const image = sharp(imagePath);
-    const { data, info } = await image
+    const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
+
+    const bgColor = {
+      r: data[0],
+      g: data[1],
+      b: data[2],
+      alpha: info.channels === 4 ? data[3] : 255
+    };
+    
+    console.log('🎨 Background detected:', bgColor);
+
+    // ADIM 1: Kırp (trim)
+    console.log('✂️ Step 2: Cropping...');
+    
+    const croppedBuffer = await sharp(imagePath)
+      .trim({
+        background: bgColor,
+        threshold: threshold
+      })
+      .toBuffer();
+
+    // ADIM 2: Arkaplanı kaldır (transparent yap)
+    console.log('🧹 Step 3: Removing background...');
+    
+    const { data: croppedData, info: croppedInfo } = await sharp(croppedBuffer)
+      .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
 
-    // Köşe piksellerinden arkaplan rengini tespit et
-    const corners = [
-      0, // Sol üst
-      info.width - 1, // Sağ üst
-      (info.height - 1) * info.width, // Sol alt
-      info.height * info.width - 1 // Sağ alt
-    ];
-
-    // En çok tekrar eden köşe rengini bul
-    const cornerColors = corners.map(pos => {
-      const i = pos * info.channels;
-      return {
-        r: data[i],
-        g: data[i + 1],
-        b: data[i + 2],
-        alpha: info.channels === 4 ? data[i + 3] : 255
-      };
-    });
-
-    // İlk köşe rengini arkaplan olarak al
-    const bgColor = cornerColors[0];
+    const pixels = Buffer.from(croppedData);
     
-    console.log('🎨 Background color detected:', bgColor);
+    // Her pikseli kontrol et, arkaplan rengine yakınsa şeffaf yap
+    for (let i = 0; i < pixels.length; i += croppedInfo.channels) {
+      const r = pixels[i];
+      const g = pixels[i + 1];
+      const b = pixels[i + 2];
+      
+      // Arkaplan rengine yakın mı?
+      const diff = Math.abs(r - bgColor.r) + 
+                   Math.abs(g - bgColor.g) + 
+                   Math.abs(b - bgColor.b);
+      
+      if (diff <= threshold * 3) {
+        // Şeffaf yap
+        pixels[i + 3] = 0; // Alpha = 0
+      }
+    }
 
-    // Arkaplan rengini kaldır ve kırp
-    const result = await sharp(imagePath)
-      .trim({
-        background: bgColor,
-        threshold: 15 // Tolerans (renk farkı)
-      })
-      .png()
-      .toBuffer();
+    // Final PNG oluştur
+    const result = await sharp(pixels, {
+      raw: {
+        width: croppedInfo.width,
+        height: croppedInfo.height,
+        channels: croppedInfo.channels
+      }
+    })
+    .png()
+    .toBuffer();
 
-    console.log('✅ Cropped successfully');
+    console.log('✅ Success: Cropped + Background removed');
 
     res.set({
       'Content-Type': 'image/png',
@@ -109,9 +131,9 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     res.send(result);
 
   } catch (error) {
-    console.error('❌ Crop error:', error);
+    console.error('❌ Error:', error);
     res.status(500).json({ 
-      error: 'Failed to crop image',
+      error: 'Failed to process image',
       details: error.message 
     });
   } finally {
