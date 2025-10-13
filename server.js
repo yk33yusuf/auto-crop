@@ -96,6 +96,88 @@ app.post('/crop', upload.single('image'), async (req, res) => {
   }
 });
 
+// Crop endpoint - akıllı arkaplan tespiti
+app.post('/crop', upload.single('image'), async (req, res) => {
+  let imagePath;
+  
+  try {
+    const imageFile = req.file;
+    
+    if (!imageFile) {
+      return res.status(400).json({ error: 'Image file required' });
+    }
+
+    const maxSize = 20 * 1024 * 1024;
+    if (imageFile.size > maxSize) {
+      await fs.unlink(imageFile.path);
+      return res.status(400).json({ 
+        error: 'File too large',
+        maxSize: '20MB'
+      });
+    }
+
+    imagePath = imageFile.path;
+    
+    console.log('🔍 Detecting background color...');
+
+    // Görseli oku
+    const image = sharp(imagePath);
+    const { data, info } = await image
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    // Köşe piksellerinden arkaplan rengini tespit et
+    const corners = [
+      0, // Sol üst
+      info.width - 1, // Sağ üst
+      (info.height - 1) * info.width, // Sol alt
+      info.height * info.width - 1 // Sağ alt
+    ];
+
+    // En çok tekrar eden köşe rengini bul
+    const cornerColors = corners.map(pos => {
+      const i = pos * info.channels;
+      return {
+        r: data[i],
+        g: data[i + 1],
+        b: data[i + 2],
+        alpha: info.channels === 4 ? data[i + 3] : 255
+      };
+    });
+
+    // İlk köşe rengini arkaplan olarak al
+    const bgColor = cornerColors[0];
+    
+    console.log('🎨 Background color detected:', bgColor);
+
+    // Arkaplan rengini kaldır ve kırp
+    const result = await sharp(imagePath)
+      .trim({
+        background: bgColor,
+        threshold: 15 // Tolerans (renk farkı)
+      })
+      .png()
+      .toBuffer();
+
+    console.log('✅ Cropped successfully');
+
+    res.set({
+      'Content-Type': 'image/png',
+      'Content-Disposition': `attachment; filename="cropped-${Date.now()}.png"`
+    });
+    res.send(result);
+
+  } catch (error) {
+    console.error('❌ Crop error:', error);
+    res.status(500).json({ 
+      error: 'Failed to crop image',
+      details: error.message 
+    });
+  } finally {
+    if (imagePath) await fs.unlink(imagePath).catch(() => {});
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 Auto Crop API running on port ${PORT}`);
 });
