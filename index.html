@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Auto Crop - Test Interface</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        
+        .upload-section {
+            border: 3px dashed #ccc;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 30px;
+            transition: border-color 0.3s;
+        }
+        
+        .upload-section:hover {
+            border-color: #667eea;
+        }
+        
+        .upload-section.drag-over {
+            border-color: #667eea;
+            background-color: #f8f9ff;
+        }
+        
+        #fileInput {
+            margin: 20px 0;
+        }
+        
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .control-group {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #555;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            margin: 10px 0;
+        }
+        
+        .threshold-value {
+            background: #667eea;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        
+        button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            transition: transform 0.2s;
+        }
+        
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .results {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 30px;
+        }
+        
+        .result-item {
+            text-align: center;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        
+        .result-item h3 {
+            margin: 0 0 15px 0;
+            color: #333;
+        }
+        
+        .result-item img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .processing {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+            font-weight: bold;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        
+        .download-btn {
+            background: #28a745;
+            font-size: 14px;
+            padding: 10px 20px;
+            margin-top: 10px;
+        }
+        
+        @media (max-width: 768px) {
+            .controls, .results {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Enhanced Auto Crop Tool</h1>
+        
+        <div class="upload-section" id="uploadSection">
+            <h3>📁 Resim Yükle</h3>
+            <p>Bir resim dosyası seçin veya sürükleyip bırakın</p>
+            <input type="file" id="fileInput" accept="image/*">
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="threshold">🎚️ Sensitivity Threshold</label>
+                <input type="range" id="threshold" min="10" max="100" value="25" step="5">
+                <div>Değer: <span class="threshold-value" id="thresholdValue">25</span></div>
+                <small>Düşük: Daha hassas (daha fazla temizleme)<br>
+                       Yüksek: Daha toleranslı (daha az temizleme)</small>
+            </div>
+            
+            <div class="control-group">
+                <label>📊 İşlem Bilgisi</label>
+                <div id="processingInfo">
+                    <div>✨ Akıllı arkaplan tespiti</div>
+                    <div>🧹 Gelişmiş renk algoritması</div>
+                    <div>🔧 Anti-aliasing temizleme</div>
+                    <div>🪄 Kenar düzeltme</div>
+                </div>
+            </div>
+        </div>
+        
+        <button id="processBtn" disabled>🚀 İşleme Başla</button>
+        
+        <div id="processing" class="processing" style="display: none;">
+            <div>⏳ İşleniyor... Lütfen bekleyin</div>
+            <div style="margin-top: 10px;">Bu işlem 10-30 saniye sürebilir.</div>
+        </div>
+        
+        <div id="results" class="results" style="display: none;">
+            <div class="result-item">
+                <h3>📷 Orijinal Resim</h3>
+                <img id="originalImg" src="" alt="Original">
+            </div>
+            <div class="result-item">
+                <h3>✨ İşlenmiş Resim</h3>
+                <img id="processedImg" src="" alt="Processed">
+                <button id="downloadBtn" class="download-btn" style="display: none;">
+                    💾 İndir
+                </button>
+            </div>
+        </div>
+        
+        <div id="errorDiv" style="display: none;"></div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const processBtn = document.getElementById('processBtn');
+        const thresholdSlider = document.getElementById('threshold');
+        const thresholdValue = document.getElementById('thresholdValue');
+        const uploadSection = document.getElementById('uploadSection');
+        const results = document.getElementById('results');
+        const processing = document.getElementById('processing');
+        const errorDiv = document.getElementById('errorDiv');
+        const originalImg = document.getElementById('originalImg');
+        const processedImg = document.getElementById('processedImg');
+        const downloadBtn = document.getElementById('downloadBtn');
+        
+        let selectedFile = null;
+        let processedBlob = null;
+        
+        // API URL - burası sizin server adresiniz olacak
+        const API_URL = 'http://localhost:3000';
+        
+        // Threshold slider güncelleme
+        thresholdSlider.addEventListener('input', (e) => {
+            thresholdValue.textContent = e.target.value;
+        });
+        
+        // Dosya seçimi
+        fileInput.addEventListener('change', handleFileSelect);
+        
+        // Drag & Drop
+        uploadSection.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadSection.classList.add('drag-over');
+        });
+        
+        uploadSection.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            uploadSection.classList.remove('drag-over');
+        });
+        
+        uploadSection.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadSection.classList.remove('drag-over');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileSelect({ target: { files: files } });
+            }
+        });
+        
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file && file.type.startsWith('image/')) {
+                selectedFile = file;
+                processBtn.disabled = false;
+                
+                // Orijinal resmi göster
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    originalImg.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+                
+                showMessage(`✅ Dosya seçildi: ${file.name}`, 'success');
+            } else {
+                showMessage('❌ Lütfen geçerli bir resim dosyası seçin', 'error');
+            }
+        }
+        
+        // İşleme başlat
+        processBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+            
+            try {
+                processBtn.disabled = true;
+                processing.style.display = 'block';
+                results.style.display = 'none';
+                errorDiv.style.display = 'none';
+                
+                const formData = new FormData();
+                formData.append('image', selectedFile);
+                formData.append('threshold', thresholdSlider.value);
+                
+                const response = await fetch(`${API_URL}/crop`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+                
+                processedBlob = await response.blob();
+                const processedUrl = URL.createObjectURL(processedBlob);
+                
+                processedImg.src = processedUrl;
+                downloadBtn.style.display = 'block';
+                
+                processing.style.display = 'none';
+                results.style.display = 'grid';
+                
+                showMessage('✅ İşlem başarıyla tamamlandı!', 'success');
+                
+            } catch (error) {
+                console.error('Error:', error);
+                processing.style.display = 'none';
+                processBtn.disabled = false;
+                showMessage(`❌ Hata: ${error.message}`, 'error');
+            }
+            
+            processBtn.disabled = false;
+        });
+        
+        // İndirme
+        downloadBtn.addEventListener('click', () => {
+            if (processedBlob) {
+                const url = URL.createObjectURL(processedBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `cropped-${Date.now()}.png`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+        });
+        
+        function showMessage(message, type) {
+            errorDiv.className = type;
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
