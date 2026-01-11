@@ -27,74 +27,20 @@ const upload = multer({
 // uploads klasörünü oluştur
 fs.mkdir('uploads', { recursive: true });
 
-// Gelişmiş renk benzerlik hesaplama
+// Basit ve etkili renk benzerlik hesaplama
 function colorDistance(r1, g1, b1, r2, g2, b2) {
-  // Orange background için özel optimizasyon
   const deltaR = Math.abs(r1 - r2);
   const deltaG = Math.abs(g1 - g2);
   const deltaB = Math.abs(b1 - b2);
   
-  // Orange tonları için weighted distance
-  if (r2 > 200 && g2 > 100 && g2 < 200 && b2 < 100) {
-    // Orange background detected - use stricter comparison
-    return Math.max(deltaR * 0.8, deltaG * 1.2, deltaB * 1.5);
-  }
-  
-  // Standard weighted euclidean distance
-  const rMean = (r1 + r2) / 2;
-  const weightR = 2 + rMean / 256;
-  const weightG = 4;
-  const weightB = 2 + (255 - rMean) / 256;
-  
-  return Math.sqrt(
-    weightR * deltaR * deltaR +
-    weightG * deltaG * deltaG +
-    weightB * deltaB * deltaB
-  );
+  // Simple weighted distance
+  return deltaR * 0.3 + deltaG * 0.59 + deltaB * 0.11;
 }
 
-// HSV renk uzayında benzerlik kontrolü (orange için)
+// Basit background detection
 function isBackgroundColor(r, g, b, bgColor, threshold) {
-  // İlk önce normal distance kontrol et
   const distance = colorDistance(r, g, b, bgColor.r, bgColor.g, bgColor.b);
-  if (distance <= threshold) return true;
-  
-  // Orange background için HSV kontrolü
-  if (bgColor.r > 200 && bgColor.g > 100 && bgColor.g < 200 && bgColor.b < 100) {
-    // RGB to HSV conversion for current pixel
-    const rNorm = r / 255;
-    const gNorm = g / 255;
-    const bNorm = b / 255;
-    
-    const max = Math.max(rNorm, gNorm, bNorm);
-    const min = Math.min(rNorm, gNorm, bNorm);
-    const diff = max - min;
-    
-    let hue = 0;
-    if (diff !== 0) {
-      if (max === rNorm) {
-        hue = (60 * ((gNorm - bNorm) / diff) + 360) % 360;
-      } else if (max === gNorm) {
-        hue = 60 * ((bNorm - rNorm) / diff) + 120;
-      } else {
-        hue = 60 * ((rNorm - gNorm) / diff) + 240;
-      }
-    }
-    
-    const saturation = max === 0 ? 0 : diff / max;
-    const value = max;
-    
-    // Orange hue range check (20-40 degrees)
-    const isOrangeHue = (hue >= 15 && hue <= 45);
-    const isHighSat = saturation > 0.7;
-    const isHighVal = value > 0.6;
-    
-    if (isOrangeHue && isHighSat && isHighVal) {
-      return true;
-    }
-  }
-  
-  return false;
+  return distance <= threshold;
 }
 
 // Arkaplan rengini daha akıllı tespit et
@@ -193,116 +139,32 @@ function morphologicalClose(data, width, height, channels) {
   return result;
 }
 
-// Gelişmiş anti-aliasing temizleme ve orange halo fix
+// Basit ve etkili background removal
 function cleanAntiAliasing(data, width, height, channels, bgColor, threshold) {
   const result = Buffer.from(data);
   
   console.log('🎨 Background color for cleaning:', bgColor);
   
-  // İlk pass: Kesin arkaplan piksellerini temizle
+  // Basit approach: her pikseli kontrol et
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const offset = (y * width + x) * channels;
       const r = result[offset];
       const g = result[offset + 1];
       const b = result[offset + 2];
-      
-      if (isBackgroundColor(r, g, b, bgColor, threshold)) {
-        result[offset + 3] = 0; // Tamamen şeffaf
-      }
-    }
-  }
-  
-  // İkinci pass: Kenar temizleme (orange halo fix)
-  for (let y = 1; y < height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
-      const offset = (y * width + x) * channels;
-      const r = result[offset];
-      const g = result[offset + 1];
-      const b = result[offset + 2];
       const alpha = result[offset + 3];
       
-      // Skip already transparent pixels
-      if (alpha === 0) continue;
-      
-      // Orange background specific halo detection
-      const isOrangeish = r > 150 && g > 80 && g < 180 && b < 80;
-      
-      if (isOrangeish) {
-        // Çevreyi kontrol et
-        let transparentNeighbors = 0;
-        let totalNeighbors = 0;
-        
-        // 3x3 neighborhood check
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            if (dx === 0 && dy === 0) continue;
-            
-            const nx = x + dx;
-            const ny = y + dy;
-            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-              const nOffset = (ny * width + nx) * channels;
-              const nAlpha = result[nOffset + 3];
-              
-              totalNeighbors++;
-              if (nAlpha === 0) {
-                transparentNeighbors++;
-              }
-            }
-          }
-        }
-        
-        const transparentRatio = transparentNeighbors / totalNeighbors;
-        
-        // Eğer çevrenin %40+ şeffaf ise bu piksel muhtemelen halo
-        if (transparentRatio >= 0.4) {
-          result[offset + 3] = 0;
-        } else if (transparentRatio >= 0.25) {
-          // Partial transparency for edge softening
-          result[offset + 3] = Math.floor(alpha * 0.3);
-        }
+      // Arkaplan rengine benzer mi?
+      if (isBackgroundColor(r, g, b, bgColor, threshold)) {
+        result[offset + 3] = 0; // Şeffaf yap
       }
-      
-      // Genel anti-aliasing kontrolü
-      const distance = colorDistance(r, g, b, bgColor.r, bgColor.g, bgColor.b);
-      
-      if (distance <= threshold * 1.5 && distance > threshold) {
-        // Bu bölge anti-aliasing olabilir
-        let solidNeighbors = 0;
-        let totalNeighbors = 0;
-        
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            if (dx === 0 && dy === 0) continue;
-            
-            const nx = x + dx;
-            const ny = y + dy;
-            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-              const nOffset = (ny * width + nx) * channels;
-              const nR = result[nOffset];
-              const nG = result[nOffset + 1];
-              const nB = result[nOffset + 2];
-              const nAlpha = result[nOffset + 3];
-              
-              totalNeighbors++;
-              
-              const nDistance = colorDistance(nR, nG, nB, bgColor.r, bgColor.g, bgColor.b);
-              if (nDistance > threshold * 2 && nAlpha > 128) {
-                solidNeighbors++;
-              }
-            }
-          }
-        }
-        
-        const solidRatio = solidNeighbors / totalNeighbors;
-        
-        if (solidRatio < 0.2) {
-          // Çoğunlukla arkaplan, şeffaf yap
-          result[offset + 3] = 0;
-        } else if (solidRatio < 0.5) {
-          // Gradual fade
-          const fadeAlpha = Math.floor(alpha * solidRatio * 2);
-          result[offset + 3] = Math.min(255, Math.max(0, fadeAlpha));
+      // Anti-aliasing için gradual transparency
+      else {
+        const distance = colorDistance(r, g, b, bgColor.r, bgColor.g, bgColor.b);
+        if (distance <= threshold * 1.5) {
+          // Kenar pikseli - kısmi şeffaflık
+          const fadeRatio = (distance - threshold) / (threshold * 0.5);
+          result[offset + 3] = Math.floor(alpha * Math.max(0.2, Math.min(1, fadeRatio)));
         }
       }
     }
@@ -350,7 +212,7 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     }
     
     imagePath = imageFile.path;
-    const threshold = parseInt(req.body.threshold) || 35; // Orange için increased threshold
+    const threshold = parseInt(req.body.threshold) || 25; // Balanced threshold
     
     console.log('🔍 Step 1: Loading and analyzing image...');
     
@@ -375,8 +237,8 @@ app.post('/crop', upload.single('image'), async (req, res) => {
       })
       .toBuffer();
     
-    // ADIM 2: Daha hassas background removal
-    console.log('🧹 Step 4: Advanced background removal...');
+    // Basit background removal
+    console.log('🧹 Step 4: Simple background removal...');
     
     const { data: croppedData, info: croppedInfo } = await sharp(croppedBuffer)
       .ensureAlpha()
@@ -385,8 +247,8 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     
     console.log(`📏 Cropped size: ${croppedInfo.width}x${croppedInfo.height}`);
     
-    // Gelişmiş anti-aliasing temizleme
-    console.log('🔧 Step 5: Cleaning anti-aliasing...');
+    // Basit background removal
+    console.log('🔧 Step 5: Cleaning background...');
     let processedPixels = cleanAntiAliasing(
       croppedData, 
       croppedInfo.width, 
@@ -396,17 +258,8 @@ app.post('/crop', upload.single('image'), async (req, res) => {
       threshold
     );
     
-    // Morphological operations ile edge temizleme
-    console.log('🪄 Step 6: Edge smoothing...');
-    processedPixels = morphologicalClose(
-      processedPixels,
-      croppedInfo.width,
-      croppedInfo.height,
-      croppedInfo.channels
-    );
-    
     // Final PNG oluştur
-    console.log('🎯 Step 7: Generating final image...');
+    console.log('🎯 Step 6: Generating final image...');
     const result = await sharp(processedPixels, {
       raw: {
         width: croppedInfo.width,
