@@ -161,10 +161,10 @@ function cleanAntiAliasing(data, width, height, channels, bgColor, threshold) {
       // Anti-aliasing için gradual transparency
       else {
         const distance = colorDistance(r, g, b, bgColor.r, bgColor.g, bgColor.b);
-        if (distance <= threshold * 1.5) {
+        if (distance <= threshold * 1.3) {
           // Kenar pikseli - kısmi şeffaflık
-          const fadeRatio = (distance - threshold) / (threshold * 0.5);
-          result[offset + 3] = Math.floor(alpha * Math.max(0.2, Math.min(1, fadeRatio)));
+          const fadeRatio = (distance - threshold) / (threshold * 0.3);
+          result[offset + 3] = Math.floor(alpha * Math.max(0.1, Math.min(1, fadeRatio)));
         }
       }
     }
