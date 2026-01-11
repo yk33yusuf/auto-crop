@@ -251,6 +251,7 @@
     </div>
 
     <script>
+        // DOM elementlerini al
         const fileInput = document.getElementById('fileInput');
         const processBtn = document.getElementById('processBtn');
         const thresholdSlider = document.getElementById('threshold');
@@ -266,52 +267,78 @@
         let selectedFile = null;
         let processedBlob = null;
         
-        // API URL - otomatik olarak current domain kullan
+        // API URL
         //const API_URL = window.location.origin;
         const API_URL = https://auto-crop.yerlikaya.cloud/crop;
 
-        // Threshold slider güncelleme
-        thresholdSlider.addEventListener('input', (e) => {
-            thresholdValue.textContent = e.target.value;
+        // Sayfa yüklendiğinde
+        document.addEventListener('DOMContentLoaded', function() {
+            // Başlangıç threshold değerini göster
+            thresholdValue.textContent = thresholdSlider.value;
+            
+            console.log('🚀 Page loaded, API URL:', API_URL);
         });
         
-        // Sayfa yüklendiğinde başlangıç değerini göster
-        thresholdValue.textContent = thresholdSlider.value;
+        // Threshold slider değişimi
+        thresholdSlider.addEventListener('input', function(e) {
+            thresholdValue.textContent = e.target.value;
+            console.log('📊 Threshold changed to:', e.target.value);
+        });
         
         // Dosya seçimi
-        fileInput.addEventListener('change', handleFileSelect);
+        fileInput.addEventListener('change', function(event) {
+            handleFileSelect(event);
+        });
         
-        // Drag & Drop
-        uploadSection.addEventListener('dragover', (e) => {
+        // İşleme butonu
+        processBtn.addEventListener('click', function() {
+            if (selectedFile) {
+                processImage();
+            }
+        });
+        
+        // İndirme butonu
+        downloadBtn.addEventListener('click', function() {
+            if (processedBlob) {
+                downloadImage();
+            }
+        });
+        
+        // Drag & Drop events
+        uploadSection.addEventListener('dragover', function(e) {
             e.preventDefault();
             uploadSection.classList.add('drag-over');
         });
         
-        uploadSection.addEventListener('dragleave', (e) => {
+        uploadSection.addEventListener('dragleave', function(e) {
             e.preventDefault();
             uploadSection.classList.remove('drag-over');
         });
         
-        uploadSection.addEventListener('drop', (e) => {
+        uploadSection.addEventListener('drop', function(e) {
             e.preventDefault();
             uploadSection.classList.remove('drag-over');
             
             const files = e.dataTransfer.files;
             if (files.length > 0) {
+                fileInput.files = files;
                 handleFileSelect({ target: { files: files } });
             }
         });
         
         function handleFileSelect(event) {
             const file = event.target.files[0];
+            console.log('📁 File selected:', file);
+            
             if (file && file.type.startsWith('image/')) {
                 selectedFile = file;
                 processBtn.disabled = false;
                 
                 // Orijinal resmi göster
                 const reader = new FileReader();
-                reader.onload = (e) => {
+                reader.onload = function(e) {
                     originalImg.src = e.target.result;
+                    console.log('🖼️ Image preview loaded');
                 };
                 reader.readAsDataURL(file);
                 
@@ -321,11 +348,15 @@
             }
         }
         
-        // İşleme başlat
-        processBtn.addEventListener('click', async () => {
-            if (!selectedFile) return;
+        async function processImage() {
+            if (!selectedFile) {
+                showMessage('❌ Önce bir dosya seçin', 'error');
+                return;
+            }
             
             try {
+                console.log('🚀 Starting image processing...');
+                
                 processBtn.disabled = true;
                 processing.style.display = 'block';
                 results.style.display = 'none';
@@ -335,14 +366,25 @@
                 formData.append('image', selectedFile);
                 formData.append('threshold', thresholdSlider.value);
                 
+                console.log('📤 Sending request to:', `${API_URL}/crop`);
+                console.log('📊 Threshold:', thresholdSlider.value);
+                
                 const response = await fetch(`${API_URL}/crop`, {
                     method: 'POST',
                     body: formData
                 });
                 
+                console.log('📥 Response status:', response.status);
+                
                 if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.error || `Server error: ${response.status}`);
+                    let errorMsg = `Server error: ${response.status}`;
+                    try {
+                        const errorData = await response.json();
+                        errorMsg = errorData.error || errorMsg;
+                    } catch(e) {
+                        console.log('Could not parse error JSON');
+                    }
+                    throw new Error(errorMsg);
                 }
                 
                 processedBlob = await response.blob();
@@ -356,48 +398,56 @@
                 
                 showMessage('✅ İşlem başarıyla tamamlandı!', 'success');
                 
+                console.log('✅ Processing completed successfully');
+                
             } catch (error) {
-                console.error('Error:', error);
+                console.error('❌ Processing error:', error);
                 processing.style.display = 'none';
-                processBtn.disabled = false;
                 showMessage(`❌ Hata: ${error.message}`, 'error');
+            } finally {
+                processBtn.disabled = false;
             }
-            
-            processBtn.disabled = false;
-        });
+        }
         
-        // İndirme
-        downloadBtn.addEventListener('click', () => {
-            if (processedBlob) {
-                const url = URL.createObjectURL(processedBlob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `enhanced-cropped-${Date.now()}.png`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            }
-        });
+        function downloadImage() {
+            if (!processedBlob) return;
+            
+            const url = URL.createObjectURL(processedBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `cropped-${Date.now()}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            console.log('💾 Image downloaded');
+        }
         
         function showMessage(message, type) {
             errorDiv.className = type;
             errorDiv.textContent = message;
             errorDiv.style.display = 'block';
             
+            console.log(`📢 Message (${type}):`, message);
+            
             setTimeout(() => {
                 errorDiv.style.display = 'none';
             }, 5000);
         }
-
-        // Page load'da API durumunu kontrol et
-        window.addEventListener('load', async () => {
+        
+        // API durumu kontrol et
+        window.addEventListener('load', async function() {
             try {
                 const response = await fetch(`${API_URL}/`);
-                const data = await response.json();
-                console.log('🚀 API Status:', data);
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('🚀 API Status:', data);
+                } else {
+                    console.warn('⚠️ API response not OK:', response.status);
+                }
             } catch (error) {
-                console.warn('⚠️ API connection issue:', error);
+                console.warn('⚠️ API connection issue:', error.message);
                 showMessage('⚠️ API bağlantısı kontrol ediliyor...', 'error');
             }
         });
