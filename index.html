@@ -209,8 +209,8 @@
         <div class="controls">
             <div class="control-group">
                 <label for="threshold">🎚️ Sensitivity Threshold</label>
-                <input type="range" id="threshold" min="10" max="100" value="25" step="5">
-                <div>Değer: <span class="threshold-value" id="thresholdValue">25</span></div>
+                <input type="range" id="threshold" min="10" max="100" value="35" step="5">
+                <div>Değer: <span class="threshold-value" id="thresholdValue">35</span></div>
                 <small>Düşük: Daha hassas (daha fazla temizleme)<br>
                        Yüksek: Daha toleranslı (daha az temizleme)</small>
             </div>
@@ -267,7 +267,7 @@
         let processedBlob = null;
         
         // API URL - otomatik olarak current domain kullan
-        const API_URL = window.location.origin;
+        const API_URL = https://auto-crop.yerlikaya.cloud/crop;
         
         // Threshold slider güncelleme
         thresholdSlider.addEventListener('input', (e) => {
