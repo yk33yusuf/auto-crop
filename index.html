@@ -160,6 +160,27 @@
             padding: 10px 20px;
             margin-top: 10px;
         }
+
+        .api-info {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .api-info h4 {
+            margin: 0 0 10px 0;
+            color: #1565C0;
+        }
+
+        .code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 14px;
+        }
         
         @media (max-width: 768px) {
             .controls, .results {
@@ -170,7 +191,14 @@
 </head>
 <body>
     <div class="container">
-        <h1>🎯 Enhanced Auto Crop Tool</h1>
+        <h1>🎯 Enhanced Auto Crop Tool v2.0</h1>
+        
+        <div class="api-info">
+            <h4>🚀 API Endpoint</h4>
+            <p><strong>POST</strong> <span class="code">/crop</span></p>
+            <p><strong>Parameters:</strong> <span class="code">image</span> (file), <span class="code">threshold</span> (10-100)</p>
+            <p><strong>Response:</strong> PNG image with transparent background</p>
+        </div>
         
         <div class="upload-section" id="uploadSection">
             <h3>📁 Resim Yükle</h3>
@@ -238,8 +266,8 @@
         let selectedFile = null;
         let processedBlob = null;
         
-        // API URL - burası sizin server adresiniz olacak
-        const API_URL = 'http://localhost:3000';
+        // API URL - otomatik olarak current domain kullan
+        const API_URL = window.location.origin;
         
         // Threshold slider güncelleme
         thresholdSlider.addEventListener('input', (e) => {
@@ -309,7 +337,8 @@
                 });
                 
                 if (!response.ok) {
-                    throw new Error(`Server error: ${response.status}`);
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error || `Server error: ${response.status}`);
                 }
                 
                 processedBlob = await response.blob();
@@ -339,7 +368,7 @@
                 const url = URL.createObjectURL(processedBlob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `cropped-${Date.now()}.png`;
+                a.download = `enhanced-cropped-${Date.now()}.png`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -356,6 +385,18 @@
                 errorDiv.style.display = 'none';
             }, 5000);
         }
+
+        // Page load'da API durumunu kontrol et
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch(`${API_URL}/`);
+                const data = await response.json();
+                console.log('🚀 API Status:', data);
+            } catch (error) {
+                console.warn('⚠️ API connection issue:', error);
+                showMessage('⚠️ API bağlantısı kontrol ediliyor...', 'error');
+            }
+        });
     </script>
 </body>
 </html>
