@@ -390,22 +390,28 @@ app.post('/vectorize', upload.single('image'), async (req, res) => {
     
     if (colorMode === 'color') {
       // Renkli vektör için gelişmiş SVG oluştur
-      console.log('🌈 Creating color vector...');
+      console.log('🌈 Creating enhanced color vector...');
       
-      // PNG oluştur ve base64'e çevir
-      const pngBuffer = await sharp(processedPixels, {
+      // Daha yüksek kaliteli PNG oluştur
+      const highQualityPng = await sharp(processedPixels, {
         raw: {
           width: croppedInfo.width,
           height: croppedInfo.height,
           channels: croppedInfo.channels
         }
       })
-      .png()
+      .png({
+        compressionLevel: 0,  // En düşük kompresyon = en yüksek kalite
+        adaptiveFiltering: true,
+        palette: false,       // Tam renkli
+        quality: 100,
+        force: true
+      })
       .toBuffer();
       
-      const base64 = pngBuffer.toString('base64');
+      const base64 = highQualityPng.toString('base64');
       
-      // Renkli SVG wrapper oluştur
+      // Gelişmiş SVG wrapper - daha iyi rendering
       const colorSvg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" 
      xmlns:xlink="http://www.w3.org/1999/xlink" 
@@ -413,62 +419,92 @@ app.post('/vectorize', upload.single('image'), async (req, res) => {
      height="${croppedInfo.height}" 
      viewBox="0 0 ${croppedInfo.width} ${croppedInfo.height}">
   <defs>
-    <style>
-      .background-removed { background: transparent; }
-    </style>
+    <style><![CDATA[
+      .high-quality {
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: -moz-crisp-edges;
+        image-rendering: pixelated;
+        shape-rendering: crispEdges;
+      }
+    ]]></style>
   </defs>
   <image x="0" y="0" 
          width="${croppedInfo.width}" 
          height="${croppedInfo.height}" 
          xlink:href="data:image/png;base64,${base64}"
-         class="background-removed"/>
+         class="high-quality"
+         preserveAspectRatio="xMidYMid meet"/>
 </svg>`;
       
-      console.log('✅ Success: Color SVG created');
+      console.log('✅ Success: Enhanced Color SVG created');
       res.set({
         'Content-Type': 'image/svg+xml',
-        'Content-Disposition': `attachment; filename="color-vector-${Date.now()}.svg"`
+        'Content-Disposition': `attachment; filename="enhanced-color-vector-${Date.now()}.svg"`
       });
       res.send(colorSvg);
       
     } else {
-      // Monochrome vektör için Potrace kullan
-      console.log('⚫ Creating monochrome vector...');
+      // Hybrid vektör için upscaling + color preservation
+      console.log('🎨 Creating hybrid vector...');
       
-      const pngBuffer = await sharp(processedPixels, {
+      // Önce 2x upscale yap (daha smooth edges için)
+      const upscaledBuffer = await sharp(processedPixels, {
         raw: {
           width: croppedInfo.width,
           height: croppedInfo.height,
           channels: croppedInfo.channels
         }
       })
-      .png()
+      .resize(croppedInfo.width * 2, croppedInfo.height * 2, {
+        kernel: sharp.kernel.lanczos3,  // En iyi upscaling algoritması
+        fit: 'fill'
+      })
+      .png({
+        compressionLevel: 0,
+        adaptiveFiltering: true,
+        palette: false,
+        quality: 100
+      })
       .toBuffer();
       
-      // İyileştirilmiş Potrace ayarları
-      const vectorOptions = {
-        threshold: 128,
-        optTolerance: 0.4, // Daha smooth curves
-        turdSize: 20,      // Daha küçük detayları koru
-        alphaMax: 0.75,    // Daha az köşeli
-        optCurve: true,
-        color: 'auto',
-        background: 'transparent'
-      };
+      const base64 = upscaledBuffer.toString('base64');
+      const finalWidth = croppedInfo.width * 2;
+      const finalHeight = croppedInfo.height * 2;
       
-      potrace.posterize(pngBuffer, vectorOptions, (err, svg) => {
-        if (err) {
-          console.error('❌ Potrace error:', err);
-          return res.status(500).json({ error: 'Vectorization failed', details: err.message });
-        }
-        
-        console.log('✅ Success: Monochrome SVG created');
-        res.set({
-          'Content-Type': 'image/svg+xml',
-          'Content-Disposition': `attachment; filename="mono-vector-${Date.now()}.svg"`
-        });
-        res.send(svg);
+      // Hybrid SVG - upscaled PNG in vector wrapper
+      const hybridSvg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" 
+     xmlns:xlink="http://www.w3.org/1999/xlink" 
+     width="${croppedInfo.width}" 
+     height="${croppedInfo.height}" 
+     viewBox="0 0 ${croppedInfo.width} ${croppedInfo.height}">
+  <defs>
+    <style><![CDATA[
+      .super-smooth {
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: -o-crisp-edges;
+        image-rendering: optimize-contrast;
+        shape-rendering: geometricPrecision;
+        text-rendering: geometricPrecision;
+      }
+    ]]></style>
+  </defs>
+  <image x="0" y="0" 
+         width="${croppedInfo.width}" 
+         height="${croppedInfo.height}" 
+         xlink:href="data:image/png;base64,${base64}"
+         class="super-smooth"
+         transform="scale(0.5, 0.5)"
+         transform-origin="0 0"
+         preserveAspectRatio="xMidYMid meet"/>
+</svg>`;
+      
+      console.log('✅ Success: Hybrid Vector created');
+      res.set({
+        'Content-Type': 'image/svg+xml',
+        'Content-Disposition': `attachment; filename="hybrid-vector-${Date.now()}.svg"`
       });
+      res.send(hybridSvg);
     }
     
   } catch (error) {
