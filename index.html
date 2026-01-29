@@ -211,17 +211,29 @@
             </div>
             
             <div class="control-group">
-                <label>🎚️ Output Quality</label>
+                <label>🎚️ Processing Method</label>
                 <div style="margin: 10px 0;">
-                    <input type="radio" id="qualityStandard" name="outputQuality" value="standard" checked>
-                    <label for="qualityStandard" style="display: inline; margin-left: 5px;">Standard PNG</label>
+                    <input type="radio" id="methodStandard" name="processingMethod" value="standard" checked>
+                    <label for="methodStandard" style="display: inline; margin-left: 5px;">Standard (Free)</label>
                 </div>
                 <div style="margin: 10px 0;">
-                    <input type="radio" id="qualityPremium" name="outputQuality" value="premium">
-                    <label for="qualityPremium" style="display: inline; margin-left: 5px;">Premium PNG</label>
+                    <input type="radio" id="methodPremium" name="processingMethod" value="premium">
+                    <label for="methodPremium" style="display: inline; margin-left: 5px;">Premium (Free)</label>
                 </div>
-                <small>Standard: Hızlı işlem, iyi kalite<br>
-                       Premium: Canva-style edge detection, en iyi kalite</small>
+                <div style="margin: 10px 0;">
+                    <input type="radio" id="methodAI" name="processingMethod" value="ai">
+                    <label for="methodAI" style="display: inline; margin-left: 5px;">🤖 AI-Powered (Paid)</label>
+                </div>
+                <small>Standard: Hızlı, Premium: Canva-like<br>
+                       AI: Remove.bg kalitesi (API key gerekli)</small>
+            </div>
+            
+            <div class="control-group" id="apiKeySection" style="display: none;">
+                <label for="apiKey">🔑 Remove.bg API Key</label>
+                <input type="password" id="apiKey" placeholder="API key buraya yapıştırın" 
+                       style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin: 10px 0;">
+                <small><a href="https://www.remove.bg/api" target="_blank">🔗 API key almak için tıklayın</a><br>
+                       İlk 50 resim ücretsiz, sonrası ücretli</small>
             </div>
         </div>
         
@@ -346,6 +358,21 @@
             }
         }
         
+        // Method change handling
+        const methodRadios = document.getElementsByName('processingMethod');
+        const apiKeySection = document.getElementById('apiKeySection');
+        const apiKeyInput = document.getElementById('apiKey');
+        
+        methodRadios.forEach(radio => {
+            radio.addEventListener('change', function() {
+                if (this.value === 'ai') {
+                    apiKeySection.style.display = 'block';
+                } else {
+                    apiKeySection.style.display = 'none';
+                }
+            });
+        });
+        
         async function processImage() {
             if (!selectedFile) {
                 showMessage('❌ Önce bir dosya seçin', 'error');
@@ -360,12 +387,12 @@
                 results.style.display = 'none';
                 errorDiv.style.display = 'none';
                 
-                // Quality seçimini al
-                const qualityRadios = document.getElementsByName('outputQuality');
-                let selectedQuality = 'standard';
-                for (const radio of qualityRadios) {
+                // Method seçimini al
+                const methodRadios = document.getElementsByName('processingMethod');
+                let selectedMethod = 'standard';
+                for (const radio of methodRadios) {
                     if (radio.checked) {
-                        selectedQuality = radio.value;
+                        selectedMethod = radio.value;
                         break;
                     }
                 }
@@ -373,13 +400,23 @@
                 const formData = new FormData();
                 formData.append('image', selectedFile);
                 formData.append('threshold', thresholdSlider.value);
-                formData.append('quality', selectedQuality);
                 
                 let endpoint = '/crop';
                 
+                if (selectedMethod === 'ai') {
+                    const apiKey = apiKeyInput.value.trim();
+                    if (!apiKey) {
+                        throw new Error('AI işlemi için Remove.bg API key gerekli');
+                    }
+                    endpoint = '/ai-remove';
+                    formData.append('apiKey', apiKey);
+                } else {
+                    formData.append('quality', selectedMethod);
+                }
+                
                 console.log('📤 Sending request to:', `${API_URL}${endpoint}`);
                 console.log('📊 Threshold:', thresholdSlider.value);
-                console.log('🎨 Quality:', selectedQuality);
+                console.log('🎨 Method:', selectedMethod);
                 
                 const response = await fetch(`${API_URL}${endpoint}`, {
                     method: 'POST',
@@ -393,6 +430,10 @@
                     try {
                         const errorData = await response.json();
                         errorMsg = errorData.error || errorMsg;
+                        
+                        if (errorData.info) {
+                            errorMsg += ` - ${errorData.info}`;
+                        }
                     } catch(e) {
                         console.log('Could not parse error JSON');
                     }
@@ -408,8 +449,11 @@
                 processing.style.display = 'none';
                 results.style.display = 'grid';
                 
-                const qualityText = selectedQuality === 'premium' ? 'Premium PNG' : 'Standard PNG';
-                showMessage(`✅ İşlem başarıyla tamamlandı! Format: ${qualityText}`, 'success');
+                let methodText = 'Standard';
+                if (selectedMethod === 'premium') methodText = 'Premium';
+                else if (selectedMethod === 'ai') methodText = '🤖 AI-Powered';
+                
+                showMessage(`✅ İşlem başarıyla tamamlandı! Method: ${methodText}`, 'success');
                 
                 console.log('✅ Processing completed successfully');
                 
@@ -425,12 +469,12 @@
         function downloadImage() {
             if (!processedBlob) return;
             
-            // Quality'yi kontrol et
-            const qualityRadios = document.getElementsByName('outputQuality');
-            let selectedQuality = 'standard';
-            for (const radio of qualityRadios) {
+            // Method'u kontrol et
+            const methodRadios = document.getElementsByName('processingMethod');
+            let selectedMethod = 'standard';
+            for (const radio of methodRadios) {
                 if (radio.checked) {
-                    selectedQuality = radio.value;
+                    selectedMethod = radio.value;
                     break;
                 }
             }
@@ -440,15 +484,16 @@
             a.href = url;
             
             const timestamp = Date.now();
-            const qualityPrefix = selectedQuality === 'premium' ? 'premium' : 'standard';
-            a.download = `yerlikaya-${qualityPrefix}-${timestamp}.png`;
+            const methodPrefix = selectedMethod === 'ai' ? 'ai-powered' : 
+                               selectedMethod === 'premium' ? 'premium' : 'standard';
+            a.download = `yerlikaya-${methodPrefix}-${timestamp}.png`;
             
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             
-            console.log('💾 Image downloaded as', `${qualityPrefix} PNG`);
+            console.log('💾 Image downloaded as', `${methodPrefix} PNG`);
         }
         
         function showMessage(message, type) {
