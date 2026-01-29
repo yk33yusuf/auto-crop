@@ -1,7 +1,7 @@
 {
   "name": "auto-crop",
-  "version": "1.1.0",
-  "description": "Enhanced auto crop with smart background removal, anti-aliasing cleanup and edge smoothing - API for n8n workflow",
+  "version": "2.0.0",
+  "description": "Auto crop with smart background removal, anti-aliasing cleanup and edge smoothing - API for n8n workflow",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -27,17 +27,18 @@
     "express": "^4.18.2",
     "multer": "^1.4.5-lts.1",
     "sharp": "^0.33.0",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "potrace": "^2.1.8"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/yk33yusuf/auto-crop"
+    "url": "https://github.com/yk33yusuf/enhanced-auto-crop"
   },
   "bugs": {
-    "url": "https://github.com/yk33yusuf/auto-crop/issues"
+    "url": "https://github.com/yk33yusuf/enhanced-auto-crop/issues"
   },
-  "homepage": "https://github.com/yk33yusuf/auto-crop#readme"
+  "homepage": "https://github.com/yk33yusuf/enhanced-auto-crop#readme"
 }
