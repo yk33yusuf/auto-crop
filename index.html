@@ -221,20 +221,14 @@
                     <label for="methodPremium" style="display: inline; margin-left: 5px;">Premium (Free)</label>
                 </div>
                 <div style="margin: 10px 0;">
-                    <input type="radio" id="methodAI" name="processingMethod" value="ai">
-                    <label for="methodAI" style="display: inline; margin-left: 5px;">🤖 AI-Powered (Paid)</label>
+                    <input type="radio" id="methodTrimOnly" name="processingMethod" value="trim-only">
+                    <label for="methodTrimOnly" style="display: inline; margin-left: 5px;">✂️ Trim Only (Free)</label>
                 </div>
-                <small>Standard: Hızlı, Premium: Canva-like<br>
-                       AI: Remove.bg kalitesi (API key gerekli)</small>
+                <small>Standard: Hızlı background removal + crop<br>
+                       Premium: Canva-style edge detection + crop<br>
+                       Trim Only: Sadece kenar kırpma (arkaplan korunur)</small>
             </div>
-            
-            <div class="control-group" id="apiKeySection" style="display: none;">
-                <label for="apiKey">🔑 Remove.bg API Key</label>
-                <input type="password" id="apiKey" placeholder="API key buraya yapıştırın" 
-                       style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin: 10px 0;">
-                <small><a href="https://www.remove.bg/api" target="_blank">🔗 API key almak için tıklayın</a><br>
-                       İlk 50 resim ücretsiz, sonrası ücretli</small>
-            </div>
+
         </div>
         
         <button id="processBtn" disabled>🚀 İşleme Başla</button>
@@ -358,20 +352,7 @@
             }
         }
         
-        // Method change handling
-        const methodRadios = document.getElementsByName('processingMethod');
-        const apiKeySection = document.getElementById('apiKeySection');
-        const apiKeyInput = document.getElementById('apiKey');
-        
-        methodRadios.forEach(radio => {
-            radio.addEventListener('change', function() {
-                if (this.value === 'ai') {
-                    apiKeySection.style.display = 'block';
-                } else {
-                    apiKeySection.style.display = 'none';
-                }
-            });
-        });
+        // Method change handling - API key section removed
         
         async function processImage() {
             if (!selectedFile) {
@@ -403,13 +384,9 @@
                 
                 let endpoint = '/crop';
                 
-                if (selectedMethod === 'ai') {
-                    const apiKey = apiKeyInput.value.trim();
-                    if (!apiKey) {
-                        throw new Error('AI işlemi için Remove.bg API key gerekli');
-                    }
-                    endpoint = '/ai-remove';
-                    formData.append('apiKey', apiKey);
+                if (selectedMethod === 'trim-only') {
+                    endpoint = '/trim';
+                    // Sadece threshold gönder, quality parametresi yok
                 } else {
                     formData.append('quality', selectedMethod);
                 }
@@ -451,7 +428,7 @@
                 
                 let methodText = 'Standard';
                 if (selectedMethod === 'premium') methodText = 'Premium';
-                else if (selectedMethod === 'ai') methodText = '🤖 AI-Powered';
+                else if (selectedMethod === 'trim-only') methodText = '✂️ Trim Only';
                 
                 showMessage(`✅ İşlem başarıyla tamamlandı! Method: ${methodText}`, 'success');
                 
@@ -484,8 +461,8 @@
             a.href = url;
             
             const timestamp = Date.now();
-            const methodPrefix = selectedMethod === 'ai' ? 'ai-powered' : 
-                               selectedMethod === 'premium' ? 'premium' : 'standard';
+            const methodPrefix = selectedMethod === 'premium' ? 'premium' :
+                               selectedMethod === 'trim-only' ? 'trimmed' : 'standard';
             a.download = `yerlikaya-${methodPrefix}-${timestamp}.png`;
             
             document.body.appendChild(a);
