@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enhanced Auto Crop - Test Interface</title>
+    <title>Yerlikaya Auto Crop Tool v2.0</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -191,14 +191,8 @@
 </head>
 <body>
     <div class="container">
-        <h1>🎯 Enhanced Auto Crop Tool v2.0</h1>
-        
-        <div class="api-info">
-            <h4>🚀 API Endpoint</h4>
-            <p><strong>POST</strong> <span class="code">/crop</span></p>
-            <p><strong>Parameters:</strong> <span class="code">image</span> (file), <span class="code">threshold</span> (10-100)</p>
-            <p><strong>Response:</strong> PNG image with transparent background</p>
-        </div>
+        <h1>🎯 Yerlikaya Auto Crop Tool v2.0</h1>
+
         
         <div class="upload-section" id="uploadSection">
             <h3>📁 Resim Yükle</h3>
@@ -209,10 +203,11 @@
         <div class="controls">
             <div class="control-group">
                 <label for="threshold">🎚️ Sensitivity Threshold</label>
-                <input type="range" id="threshold" min="10" max="100" value="25" step="5">
-                <div>Değer: <span class="threshold-value" id="thresholdValue">25</span></div>
-                <small>Düşük: Daha hassas (daha fazla temizleme)<br>
-                       Yüksek: Daha toleranslı (daha az temizleme)</small>
+                <input type="range" id="threshold" min="0" max="50" value="15" step="1">
+                <div>Değer: <span class="threshold-value" id="thresholdValue">15</span></div>
+                <small>0: En hassas (maksimum temizleme)<br>
+                       25+: Toleranslı (az temizleme)<br>
+                       Orange background için 10-20 önerilir</small>
             </div>
             
             <div class="control-group">
