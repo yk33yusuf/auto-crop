@@ -145,76 +145,89 @@ function morphologicalClose(data, width, height, channels) {
   return result;
 }
 
-// Text-aware background removal
-function cleanAntiAliasing(data, width, height, channels, bgColor, threshold) {
+// Canva-style advanced background removal
+function canvaStyleBackgroundRemoval(data, width, height, channels, bgColor, threshold) {
   const result = Buffer.from(data);
   
-  console.log('🎨 Background color for cleaning:', bgColor);
-  console.log('📊 Threshold value:', threshold);
+  console.log('🎨 Canva-style processing started...');
   
-  // Her pikseli kontrol et
+  // Step 1: Create edge map
+  const edgeMap = new Array(width * height).fill(false);
+  
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const offset = (y * width + x) * channels;
+      const r = result[offset];
+      const g = result[offset + 1];
+      const b = result[offset + 2];
+      
+      // Check 8-directional gradients
+      let maxGradient = 0;
+      const directions = [[-1,-1], [-1,0], [-1,1], [0,-1], [0,1], [1,-1], [1,0], [1,1]];
+      
+      for (const [dx, dy] of directions) {
+        const nx = x + dx;
+        const ny = y + dy;
+        const nOffset = (ny * width + nx) * channels;
+        
+        const gradient = Math.abs(r - result[nOffset]) + 
+                        Math.abs(g - result[nOffset + 1]) + 
+                        Math.abs(b - result[nOffset + 2]);
+        
+        maxGradient = Math.max(maxGradient, gradient);
+      }
+      
+      // High gradient = edge
+      if (maxGradient > 40) {
+        edgeMap[y * width + x] = true;
+      }
+    }
+  }
+  
+  // Step 2: Smart background removal with edge protection
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const offset = (y * width + x) * channels;
+      const pixelIndex = y * width + x;
       const r = result[offset];
       const g = result[offset + 1];
       const b = result[offset + 2];
       const alpha = result[offset + 3];
       
-      // Skip transparent pixels
+      // Skip if already transparent
       if (alpha === 0) continue;
       
-      // Check if it's definitely background
-      if (isBackgroundColor(r, g, b, bgColor, threshold)) {
-        result[offset + 3] = 0; // Make transparent
-        continue;
-      }
+      const distance = colorDistance(r, g, b, bgColor.r, bgColor.g, bgColor.b);
+      const isEdge = edgeMap[pixelIndex];
       
-      // Text edge protection - don't touch high contrast areas
-      if (threshold > 0) {
-        const distance = colorDistance(r, g, b, bgColor.r, bgColor.g, bgColor.b);
-        
-        // Check if this pixel is near high-contrast content (likely text)
-        let isNearText = false;
-        const checkRadius = 2;
-        
-        for (let dy = -checkRadius; dy <= checkRadius && !isNearText; dy++) {
-          for (let dx = -checkRadius; dx <= checkRadius && !isNearText; dx++) {
-            const nx = x + dx;
-            const ny = y + dy;
-            
-            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-              const nOffset = (ny * width + nx) * channels;
-              const nr = result[nOffset];
-              const ng = result[nOffset + 1];
-              const nb = result[nOffset + 2];
-              
-              // Check for high contrast (likely text)
-              const pixelBrightness = (r + g + b) / 3;
-              const neighborBrightness = (nr + ng + nb) / 3;
-              const contrastDiff = Math.abs(pixelBrightness - neighborBrightness);
-              
-              if (contrastDiff > 100) { // High contrast detected
-                isNearText = true;
-              }
-            }
+      if (threshold === 0) {
+        // Exact match only
+        if (r === bgColor.r && g === bgColor.g && b === bgColor.b) {
+          result[offset + 3] = 0;
+        }
+      } else if (distance <= threshold) {
+        if (isEdge) {
+          // Edge pixel - be very conservative
+          if (distance <= threshold * 0.5) {
+            result[offset + 3] = 0;
+          } else {
+            // Gradual fade for edge pixels
+            const fadeRatio = 1 - (distance / threshold);
+            result[offset + 3] = Math.floor(alpha * (1 - fadeRatio * 0.7));
           }
+        } else {
+          // Non-edge pixel - remove more aggressively
+          result[offset + 3] = 0;
         }
-        
-        // If near text, be more conservative with removal
-        if (isNearText && distance <= threshold * 2.0) {
-          // Don't remove - preserve text edges
-          continue;
-        } else if (!isNearText && distance <= threshold * 1.5) {
-          // Safe to apply gradual transparency
-          const fadeRatio = (distance - threshold) / (threshold * 0.5);
-          const newAlpha = Math.floor(alpha * Math.max(0.1, Math.min(1, fadeRatio)));
-          result[offset + 3] = newAlpha;
-        }
+      } else if (distance <= threshold * 1.2 && !isEdge) {
+        // Soft background removal for non-edges
+        const fadeRatio = (distance - threshold) / (threshold * 0.2);
+        result[offset + 3] = Math.floor(alpha * Math.max(0.3, fadeRatio));
       }
     }
   }
   
+  console.log('✅ Canva-style processing completed');
   return result;
 }
 
@@ -292,9 +305,9 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     
     console.log(`📏 Cropped size: ${croppedInfo.width}x${croppedInfo.height}`);
     
-    // Basit background removal
-    console.log('🔧 Step 5: Cleaning background...');
-    let processedPixels = cleanAntiAliasing(
+    // Canva-style background removal
+    console.log('🔧 Step 5: Canva-style cleaning...');
+    let processedPixels = canvaStyleBackgroundRemoval(
       croppedData, 
       croppedInfo.width, 
       croppedInfo.height, 
@@ -377,7 +390,7 @@ app.post('/vectorize', upload.single('image'), async (req, res) => {
       .raw()
       .toBuffer({ resolveWithObject: true });
     
-    let processedPixels = cleanAntiAliasing(
+    let processedPixels = canvaStyleBackgroundRemoval(
       croppedData, 
       croppedInfo.width, 
       croppedInfo.height, 
