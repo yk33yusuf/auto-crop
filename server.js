@@ -339,7 +339,7 @@ app.post('/crop', upload.single('image'), async (req, res) => {
   }
 });
 
-// Vektörizasyon endpoint'i
+// Vektörizasyon endpoint'i - İyileştirilmiş
 app.post('/vectorize', upload.single('image'), async (req, res) => {
   let imagePath;
   
@@ -352,7 +352,7 @@ app.post('/vectorize', upload.single('image'), async (req, res) => {
     
     imagePath = imageFile.path;
     const threshold = parseInt(req.body.threshold) || 15;
-    const outputFormat = req.body.format || 'svg'; // svg veya pdf
+    const colorMode = req.body.colorMode || 'color'; // 'color' veya 'mono'
     
     console.log('🎯 Step 1: Processing image for vectorization...');
     
@@ -386,63 +386,88 @@ app.post('/vectorize', upload.single('image'), async (req, res) => {
       threshold
     );
     
-    // PNG oluştur (potrace için gerekli)
-    const pngBuffer = await sharp(processedPixels, {
-      raw: {
-        width: croppedInfo.width,
-        height: croppedInfo.height,
-        channels: croppedInfo.channels
-      }
-    })
-    .png()
-    .toBuffer();
+    console.log('🎯 Step 2: Preparing for vectorization...');
     
-    console.log('🎯 Step 2: Converting to vector...');
-    
-    // Potrace ile vektörizasyon
-    const vectorOptions = {
-      threshold: 128,
-      optTolerance: 0.2,
-      turdSize: 100,
-      alphaMax: 1,
-      optCurve: true,
-      color: 'auto',
-      background: 'transparent'
-    };
-    
-    if (outputFormat === 'svg') {
+    if (colorMode === 'color') {
+      // Renkli vektör için gelişmiş SVG oluştur
+      console.log('🌈 Creating color vector...');
+      
+      // PNG oluştur ve base64'e çevir
+      const pngBuffer = await sharp(processedPixels, {
+        raw: {
+          width: croppedInfo.width,
+          height: croppedInfo.height,
+          channels: croppedInfo.channels
+        }
+      })
+      .png()
+      .toBuffer();
+      
+      const base64 = pngBuffer.toString('base64');
+      
+      // Renkli SVG wrapper oluştur
+      const colorSvg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" 
+     xmlns:xlink="http://www.w3.org/1999/xlink" 
+     width="${croppedInfo.width}" 
+     height="${croppedInfo.height}" 
+     viewBox="0 0 ${croppedInfo.width} ${croppedInfo.height}">
+  <defs>
+    <style>
+      .background-removed { background: transparent; }
+    </style>
+  </defs>
+  <image x="0" y="0" 
+         width="${croppedInfo.width}" 
+         height="${croppedInfo.height}" 
+         xlink:href="data:image/png;base64,${base64}"
+         class="background-removed"/>
+</svg>`;
+      
+      console.log('✅ Success: Color SVG created');
+      res.set({
+        'Content-Type': 'image/svg+xml',
+        'Content-Disposition': `attachment; filename="color-vector-${Date.now()}.svg"`
+      });
+      res.send(colorSvg);
+      
+    } else {
+      // Monochrome vektör için Potrace kullan
+      console.log('⚫ Creating monochrome vector...');
+      
+      const pngBuffer = await sharp(processedPixels, {
+        raw: {
+          width: croppedInfo.width,
+          height: croppedInfo.height,
+          channels: croppedInfo.channels
+        }
+      })
+      .png()
+      .toBuffer();
+      
+      // İyileştirilmiş Potrace ayarları
+      const vectorOptions = {
+        threshold: 128,
+        optTolerance: 0.4, // Daha smooth curves
+        turdSize: 20,      // Daha küçük detayları koru
+        alphaMax: 0.75,    // Daha az köşeli
+        optCurve: true,
+        color: 'auto',
+        background: 'transparent'
+      };
+      
       potrace.posterize(pngBuffer, vectorOptions, (err, svg) => {
         if (err) {
           console.error('❌ Potrace error:', err);
           return res.status(500).json({ error: 'Vectorization failed', details: err.message });
         }
         
-        console.log('✅ Success: Image vectorized to SVG');
+        console.log('✅ Success: Monochrome SVG created');
         res.set({
           'Content-Type': 'image/svg+xml',
-          'Content-Disposition': `attachment; filename="vectorized-${Date.now()}.svg"`
+          'Content-Disposition': `attachment; filename="mono-vector-${Date.now()}.svg"`
         });
         res.send(svg);
-      });
-    } else {
-      // PDF output için önce SVG oluştur, sonra PDF'e çevir
-      potrace.posterize(pngBuffer, vectorOptions, async (err, svg) => {
-        if (err) {
-          console.error('❌ Potrace error:', err);
-          return res.status(500).json({ error: 'Vectorization failed', details: err.message });
-        }
-        
-        // SVG'yi PDF'e çevir (basit implementation)
-        const pdfBuffer = await sharp(Buffer.from(svg))
-          .pdf()
-          .toBuffer();
-        
-        console.log('✅ Success: Image vectorized to PDF');
-        res.set({
-          'Content-Type': 'application/pdf',
-          'Content-Disposition': `attachment; filename="vectorized-${Date.now()}.pdf"`
-        });
-        res.send(pdfBuffer);
       });
     }
     
