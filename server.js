@@ -3,6 +3,7 @@ const multer = require('multer');
 const cors = require('cors');
 const sharp = require('sharp');
 const fs = require('fs').promises;
+const potrace = require('potrace');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -338,6 +339,124 @@ app.post('/crop', upload.single('image'), async (req, res) => {
   }
 });
 
+// Vektörizasyon endpoint'i
+app.post('/vectorize', upload.single('image'), async (req, res) => {
+  let imagePath;
+  
+  try {
+    const imageFile = req.file;
+    
+    if (!imageFile) {
+      return res.status(400).json({ error: 'Image file required' });
+    }
+    
+    imagePath = imageFile.path;
+    const threshold = parseInt(req.body.threshold) || 15;
+    const outputFormat = req.body.format || 'svg'; // svg veya pdf
+    
+    console.log('🎯 Step 1: Processing image for vectorization...');
+    
+    // Önce normal crop/background removal işlemi
+    const image = sharp(imagePath);
+    const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
+    
+    const bgColor = detectBackgroundColor(data, info.width, info.height, info.channels);
+    console.log('🎨 Background detected:', bgColor);
+    
+    // Crop işlemi
+    const croppedBuffer = await sharp(imagePath)
+      .trim({
+        background: bgColor,
+        threshold: threshold
+      })
+      .toBuffer();
+    
+    // Background removal
+    const { data: croppedData, info: croppedInfo } = await sharp(croppedBuffer)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    
+    let processedPixels = cleanAntiAliasing(
+      croppedData, 
+      croppedInfo.width, 
+      croppedInfo.height, 
+      croppedInfo.channels,
+      bgColor,
+      threshold
+    );
+    
+    // PNG oluştur (potrace için gerekli)
+    const pngBuffer = await sharp(processedPixels, {
+      raw: {
+        width: croppedInfo.width,
+        height: croppedInfo.height,
+        channels: croppedInfo.channels
+      }
+    })
+    .png()
+    .toBuffer();
+    
+    console.log('🎯 Step 2: Converting to vector...');
+    
+    // Potrace ile vektörizasyon
+    const vectorOptions = {
+      threshold: 128,
+      optTolerance: 0.2,
+      turdSize: 100,
+      alphaMax: 1,
+      optCurve: true,
+      color: 'auto',
+      background: 'transparent'
+    };
+    
+    if (outputFormat === 'svg') {
+      potrace.posterize(pngBuffer, vectorOptions, (err, svg) => {
+        if (err) {
+          console.error('❌ Potrace error:', err);
+          return res.status(500).json({ error: 'Vectorization failed', details: err.message });
+        }
+        
+        console.log('✅ Success: Image vectorized to SVG');
+        res.set({
+          'Content-Type': 'image/svg+xml',
+          'Content-Disposition': `attachment; filename="vectorized-${Date.now()}.svg"`
+        });
+        res.send(svg);
+      });
+    } else {
+      // PDF output için önce SVG oluştur, sonra PDF'e çevir
+      potrace.posterize(pngBuffer, vectorOptions, async (err, svg) => {
+        if (err) {
+          console.error('❌ Potrace error:', err);
+          return res.status(500).json({ error: 'Vectorization failed', details: err.message });
+        }
+        
+        // SVG'yi PDF'e çevir (basit implementation)
+        const pdfBuffer = await sharp(Buffer.from(svg))
+          .pdf()
+          .toBuffer();
+        
+        console.log('✅ Success: Image vectorized to PDF');
+        res.set({
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="vectorized-${Date.now()}.pdf"`
+        });
+        res.send(pdfBuffer);
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ Vectorization Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to vectorize image',
+      details: error.message 
+    });
+  } finally {
+    if (imagePath) await fs.unlink(imagePath).catch(() => {});
+  }
+});
+
 app.listen(PORT, () => {
-  console.log(`🚀 Enhanced Auto Crop API running on port ${PORT}`);
+  console.log(`🚀 Enhanced Auto Crop API with Vectorization running on port ${PORT}`);
 });
