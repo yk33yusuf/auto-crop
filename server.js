@@ -145,6 +145,44 @@ function morphologicalClose(data, width, height, channels) {
   return result;
 }
 
+// Simple but efficient background removal
+function simpleBackgroundRemoval(data, width, height, channels, bgColor, threshold) {
+  const result = Buffer.from(data);
+  
+  console.log('⚡ Simple processing started...');
+  
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const offset = (y * width + x) * channels;
+      const r = result[offset];
+      const g = result[offset + 1];
+      const b = result[offset + 2];
+      const alpha = result[offset + 3];
+      
+      if (alpha === 0) continue;
+      
+      if (threshold === 0) {
+        // Exact match only
+        if (r === bgColor.r && g === bgColor.g && b === bgColor.b) {
+          result[offset + 3] = 0;
+        }
+      } else {
+        const distance = colorDistance(r, g, b, bgColor.r, bgColor.g, bgColor.b);
+        if (distance <= threshold) {
+          result[offset + 3] = 0;
+        } else if (distance <= threshold * 1.3) {
+          // Light anti-aliasing
+          const fadeRatio = (distance - threshold) / (threshold * 0.3);
+          result[offset + 3] = Math.floor(alpha * Math.max(0.2, fadeRatio));
+        }
+      }
+    }
+  }
+  
+  console.log('✅ Simple processing completed');
+  return result;
+}
+
 // Canva-style advanced background removal
 function canvaStyleBackgroundRemoval(data, width, height, channels, bgColor, threshold) {
   const result = Buffer.from(data);
@@ -270,9 +308,11 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     }
     
     imagePath = imageFile.path;
-    const threshold = parseInt(req.body.threshold) || 15; // Sensitive threshold for precise cleaning
+    const threshold = parseInt(req.body.threshold) || 15;
+    const quality = req.body.quality || 'standard'; // standard or premium
     
     console.log('🔍 Step 1: Loading and analyzing image...');
+    console.log('📊 Quality mode:', quality);
     
     // İlk olarak resmi yükle ve bilgilerini al
     const image = sharp(imagePath);
@@ -305,16 +345,31 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     
     console.log(`📏 Cropped size: ${croppedInfo.width}x${croppedInfo.height}`);
     
-    // Canva-style background removal
-    console.log('🔧 Step 5: Canva-style cleaning...');
-    let processedPixels = canvaStyleBackgroundRemoval(
-      croppedData, 
-      croppedInfo.width, 
-      croppedInfo.height, 
-      croppedInfo.channels,
-      bgColor,
-      threshold
-    );
+    // Quality-based background removal
+    console.log('🔧 Step 5: Quality-based cleaning...');
+    let processedPixels;
+    
+    if (quality === 'premium') {
+      // Premium: Canva-style algorithm
+      processedPixels = canvaStyleBackgroundRemoval(
+        croppedData, 
+        croppedInfo.width, 
+        croppedInfo.height, 
+        croppedInfo.channels,
+        bgColor,
+        threshold
+      );
+    } else {
+      // Standard: Simple but fast
+      processedPixels = simpleBackgroundRemoval(
+        croppedData, 
+        croppedInfo.width, 
+        croppedInfo.height, 
+        croppedInfo.channels,
+        bgColor,
+        threshold
+      );
+    }
     
     // Final PNG oluştur
     console.log('🎯 Step 6: Generating final image...');
@@ -352,188 +407,6 @@ app.post('/crop', upload.single('image'), async (req, res) => {
   }
 });
 
-// Vektörizasyon endpoint'i - İyileştirilmiş
-app.post('/vectorize', upload.single('image'), async (req, res) => {
-  let imagePath;
-  
-  try {
-    const imageFile = req.file;
-    
-    if (!imageFile) {
-      return res.status(400).json({ error: 'Image file required' });
-    }
-    
-    imagePath = imageFile.path;
-    const threshold = parseInt(req.body.threshold) || 15;
-    const colorMode = req.body.colorMode || 'color'; // 'color' veya 'mono'
-    
-    console.log('🎯 Step 1: Processing image for vectorization...');
-    
-    // Önce normal crop/background removal işlemi
-    const image = sharp(imagePath);
-    const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
-    
-    const bgColor = detectBackgroundColor(data, info.width, info.height, info.channels);
-    console.log('🎨 Background detected:', bgColor);
-    
-    // Crop işlemi
-    const croppedBuffer = await sharp(imagePath)
-      .trim({
-        background: bgColor,
-        threshold: threshold
-      })
-      .toBuffer();
-    
-    // Background removal
-    const { data: croppedData, info: croppedInfo } = await sharp(croppedBuffer)
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-    
-    let processedPixels = canvaStyleBackgroundRemoval(
-      croppedData, 
-      croppedInfo.width, 
-      croppedInfo.height, 
-      croppedInfo.channels,
-      bgColor,
-      threshold
-    );
-    
-    console.log('🎯 Step 2: Preparing for vectorization...');
-    
-    if (colorMode === 'color') {
-      // Renkli vektör için gelişmiş SVG oluştur
-      console.log('🌈 Creating enhanced color vector...');
-      
-      // Daha yüksek kaliteli PNG oluştur
-      const highQualityPng = await sharp(processedPixels, {
-        raw: {
-          width: croppedInfo.width,
-          height: croppedInfo.height,
-          channels: croppedInfo.channels
-        }
-      })
-      .png({
-        compressionLevel: 0,  // En düşük kompresyon = en yüksek kalite
-        adaptiveFiltering: true,
-        palette: false,       // Tam renkli
-        quality: 100,
-        force: true
-      })
-      .toBuffer();
-      
-      const base64 = highQualityPng.toString('base64');
-      
-      // Gelişmiş SVG wrapper - daha iyi rendering
-      const colorSvg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" 
-     xmlns:xlink="http://www.w3.org/1999/xlink" 
-     width="${croppedInfo.width}" 
-     height="${croppedInfo.height}" 
-     viewBox="0 0 ${croppedInfo.width} ${croppedInfo.height}">
-  <defs>
-    <style><![CDATA[
-      .high-quality {
-        image-rendering: -webkit-optimize-contrast;
-        image-rendering: -moz-crisp-edges;
-        image-rendering: pixelated;
-        shape-rendering: crispEdges;
-      }
-    ]]></style>
-  </defs>
-  <image x="0" y="0" 
-         width="${croppedInfo.width}" 
-         height="${croppedInfo.height}" 
-         xlink:href="data:image/png;base64,${base64}"
-         class="high-quality"
-         preserveAspectRatio="xMidYMid meet"/>
-</svg>`;
-      
-      console.log('✅ Success: Enhanced Color SVG created');
-      res.set({
-        'Content-Type': 'image/svg+xml',
-        'Content-Disposition': `attachment; filename="enhanced-color-vector-${Date.now()}.svg"`
-      });
-      res.send(colorSvg);
-      
-    } else {
-      // Super Resolution vektör için AI-enhanced upscaling
-      console.log('🤖 Creating AI-enhanced vector...');
-      
-      // Önce edge enhancement yap
-      const edgeEnhanced = await sharp(processedPixels, {
-        raw: {
-          width: croppedInfo.width,
-          height: croppedInfo.height,
-          channels: croppedInfo.channels
-        }
-      })
-      .sharpen({
-        sigma: 0.5,      // Edge sharpening
-        m1: 1.0,         // Flat area enhancement
-        m2: 2.0,         // Jagged area enhancement  
-        x1: 2,           // Threshold for flat areas
-        y2: 10,          // Threshold for jagged areas
-        y3: 20           // Maximum enhancement
-      })
-      .modulate({
-        brightness: 1.05,  // Slight brightness boost
-        saturation: 1.1,   // Color enhancement
-        hue: 0
-      })
-      .png({
-        compressionLevel: 0,
-        adaptiveFiltering: true,
-        palette: false,
-        quality: 100,
-        effort: 10         // Maximum effort for best quality
-      })
-      .toBuffer();
-      
-      const base64 = edgeEnhanced.toString('base64');
-      
-      // Clean SVG without problematic transforms
-      const superSvg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" 
-     xmlns:xlink="http://www.w3.org/1999/xlink" 
-     width="${croppedInfo.width}" 
-     height="${croppedInfo.height}" 
-     viewBox="0 0 ${croppedInfo.width} ${croppedInfo.height}">
-  <defs>
-    <style><![CDATA[
-      .super-quality {
-        image-rendering: auto;
-        shape-rendering: geometricPrecision;
-        text-rendering: geometricPrecision;
-      }
-    ]]></style>
-  </defs>
-  <image x="0" y="0" 
-         width="${croppedInfo.width}" 
-         height="${croppedInfo.height}" 
-         xlink:href="data:image/png;base64,${base64}"
-         class="super-quality"/>
-</svg>`;
-      
-      console.log('✅ Success: Super Quality Vector created');
-      res.set({
-        'Content-Type': 'image/svg+xml',
-        'Content-Disposition': `attachment; filename="super-vector-${Date.now()}.svg"`
-      });
-      res.send(superSvg);
-    }
-    
-  } catch (error) {
-    console.error('❌ Vectorization Error:', error);
-    res.status(500).json({ 
-      error: 'Failed to vectorize image',
-      details: error.message 
-    });
-  } finally {
-    if (imagePath) await fs.unlink(imagePath).catch(() => {});
-  }
-});
-
 app.listen(PORT, () => {
-  console.log(`🚀 Enhanced Auto Crop API with Vectorization running on port ${PORT}`);
+  console.log(`🚀 Yerlikaya Auto Crop API running on port ${PORT}`);
 });
