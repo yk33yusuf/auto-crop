@@ -1,11 +1,11 @@
 {
-  "name": "auto-crop",
+  "name": "enhanced-auto-crop",
   "version": "2.0.0",
-  "description": "Auto crop with smart background removal, anti-aliasing cleanup and edge smoothing - API for n8n workflow",
-  "main": "server.js",
+  "description": "Enhanced auto crop with smart background removal, anti-aliasing cleanup and edge smoothing - API for n8n workflow",
+  "main": "improved-server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
+    "start": "node improved-server.js",
+    "dev": "node improved-server.js",
     "test": "echo \"Test script not configured\" && exit 1"
   },
   "keywords": [
@@ -28,7 +28,8 @@
     "multer": "^1.4.5-lts.1",
     "sharp": "^0.33.0",
     "cors": "^2.8.5",
-    "potrace": "^2.1.8"
+    "potrace": "^2.1.8",
+    "remove.bg": "^1.3.0"
   },
   "engines": {
     "node": ">=18.0.0"
