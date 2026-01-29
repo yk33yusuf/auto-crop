@@ -217,10 +217,15 @@
                     <label for="formatPng" style="display: inline; margin-left: 5px;">PNG (Raster)</label>
                 </div>
                 <div style="margin: 10px 0;">
-                    <input type="radio" id="formatSvg" name="outputFormat" value="svg">
-                    <label for="formatSvg" style="display: inline; margin-left: 5px;">SVG (Vector)</label>
+                    <input type="radio" id="formatSvgColor" name="outputFormat" value="svg-color">
+                    <label for="formatSvgColor" style="display: inline; margin-left: 5px;">SVG (Color Vector)</label>
                 </div>
-                <small>Vector format çözünürlük kaybı olmadan ölçeklenir ve pikselleşme olmaz</small>
+                <div style="margin: 10px 0;">
+                    <input type="radio" id="formatSvgMono" name="outputFormat" value="svg-mono">
+                    <label for="formatSvgMono" style="display: inline; margin-left: 5px;">SVG (Monochrome Vector)</label>
+                </div>
+                <small>Color Vector: Renkler korunur, dosya boyutu büyük<br>
+                       Mono Vector: Siyah-beyaz, küçük dosya, true vector</small>
             </div>
         </div>
         
@@ -374,9 +379,10 @@
                 formData.append('threshold', thresholdSlider.value);
                 
                 let endpoint = '/crop';
-                if (selectedFormat === 'svg') {
+                if (selectedFormat.startsWith('svg')) {
                     endpoint = '/vectorize';
-                    formData.append('format', 'svg');
+                    const colorMode = selectedFormat === 'svg-color' ? 'color' : 'mono';
+                    formData.append('colorMode', colorMode);
                 }
                 
                 console.log('📤 Sending request to:', `${API_URL}${endpoint}`);
@@ -404,7 +410,7 @@
                 processedBlob = await response.blob();
                 
                 // SVG için özel handling
-                if (selectedFormat === 'svg') {
+                if (selectedFormat.startsWith('svg')) {
                     const svgText = await processedBlob.text();
                     const svgBlob = new Blob([svgText], { type: 'image/svg+xml' });
                     processedBlob = svgBlob;
@@ -423,7 +429,10 @@
                 processing.style.display = 'none';
                 results.style.display = 'grid';
                 
-                const formatText = selectedFormat === 'svg' ? 'Vektör (SVG)' : 'PNG';
+                let formatText = 'PNG';
+                if (selectedFormat === 'svg-color') formatText = 'Color Vector (SVG)';
+                else if (selectedFormat === 'svg-mono') formatText = 'Monochrome Vector (SVG)';
+                
                 showMessage(`✅ İşlem başarıyla tamamlandı! Format: ${formatText}`, 'success');
                 
                 console.log('✅ Processing completed successfully');
