@@ -423,20 +423,10 @@ app.post('/trim', upload.single('image'), async (req, res) => {
     console.log('✂️ Step 1: Trim-only processing...');
     console.log('📊 Threshold:', threshold);
     
-    // Arkaplan rengini tespit et (kırpma için)
-    const image = sharp(imagePath);
-    const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
-    
-    const bgColor = detectBackgroundColor(data, info.width, info.height, info.channels);
-    console.log('🎨 Background detected for trimming:', bgColor);
-    
-    // Sadece trim işlemi - arkaplan kaldırma YOK
-    console.log('✂️ Step 2: Trimming edges only...');
+    // Sharp'ın kendi trim fonksiyonunu kullan - background detection otomatik
+    console.log('✂️ Step 2: Trimming edges only (background preserved)...');
     const trimmedBuffer = await sharp(imagePath)
-      .trim({
-        background: bgColor,
-        threshold: threshold
-      })
+      .trim(threshold) // Simple trim with threshold only
       .png({
         quality: 100,
         compressionLevel: 0,
