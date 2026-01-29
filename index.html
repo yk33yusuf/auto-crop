@@ -221,11 +221,11 @@
                     <label for="formatSvgColor" style="display: inline; margin-left: 5px;">SVG (Color Vector)</label>
                 </div>
                 <div style="margin: 10px 0;">
-                    <input type="radio" id="formatSvgMono" name="outputFormat" value="svg-mono">
-                    <label for="formatSvgMono" style="display: inline; margin-left: 5px;">SVG (Monochrome Vector)</label>
+                    <input type="radio" id="formatSvgHybrid" name="outputFormat" value="svg-hybrid">
+                    <label for="formatSvgHybrid" style="display: inline; margin-left: 5px;">SVG (Hybrid Vector)</label>
                 </div>
-                <small>Color Vector: Renkler korunur, dosya boyutu büyük<br>
-                       Mono Vector: Siyah-beyaz, küçük dosya, true vector</small>
+                <small>Color Vector: Standart kalite, hızlı<br>
+                       Hybrid Vector: 2x upscaled, ultra smooth, daha büyük dosya</small>
             </div>
         </div>
         
@@ -381,7 +381,7 @@
                 let endpoint = '/crop';
                 if (selectedFormat.startsWith('svg')) {
                     endpoint = '/vectorize';
-                    const colorMode = selectedFormat === 'svg-color' ? 'color' : 'mono';
+                    const colorMode = selectedFormat === 'svg-hybrid' ? 'hybrid' : 'color';
                     formData.append('colorMode', colorMode);
                 }
                 
@@ -431,7 +431,7 @@
                 
                 let formatText = 'PNG';
                 if (selectedFormat === 'svg-color') formatText = 'Color Vector (SVG)';
-                else if (selectedFormat === 'svg-mono') formatText = 'Monochrome Vector (SVG)';
+                else if (selectedFormat === 'svg-hybrid') formatText = 'Hybrid Vector (SVG)';
                 
                 showMessage(`✅ İşlem başarıyla tamamlandı! Format: ${formatText}`, 'success');
                 
