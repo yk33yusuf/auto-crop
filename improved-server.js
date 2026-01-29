@@ -3,8 +3,6 @@ const multer = require('multer');
 const cors = require('cors');
 const sharp = require('sharp');
 const fs = require('fs').promises;
-const potrace = require('potrace');
-const { removeBackgroundFromImageFile } = require('remove.bg');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -408,8 +406,8 @@ app.post('/crop', upload.single('image'), async (req, res) => {
   }
 });
 
-// AI-powered background removal endpoint
-app.post('/ai-remove', upload.single('image'), async (req, res) => {
+// Sadece kırpma (trim-only) endpoint'i
+app.post('/trim', upload.single('image'), async (req, res) => {
   let imagePath;
   
   try {
@@ -420,64 +418,44 @@ app.post('/ai-remove', upload.single('image'), async (req, res) => {
     }
     
     imagePath = imageFile.path;
-    const apiKey = req.body.apiKey;
+    const threshold = parseInt(req.body.threshold) || 15;
     
-    if (!apiKey) {
-      return res.status(400).json({ 
-        error: 'Remove.bg API key required',
-        info: 'Get your API key from https://www.remove.bg/api'
-      });
-    }
+    console.log('✂️ Step 1: Trim-only processing...');
+    console.log('📊 Threshold:', threshold);
     
-    console.log('🤖 Step 1: Using Remove.bg AI...');
+    // Arkaplan rengini tespit et (kırpma için)
+    const image = sharp(imagePath);
+    const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
     
-    try {
-      const result = await removeBackgroundFromImageFile({
-        path: imagePath,
-        apiKey: apiKey,
-        size: "regular", // preview, regular, full
-        type: "auto",    // auto, person, product, car, animal
-        format: "png",
-        crop: true
-      });
-      
-      console.log('✅ AI processing completed');
-      console.log('💰 Credits charged:', result.creditsCharged);
-      
-      // Base64 result'unu buffer'a çevir
-      const imageBuffer = Buffer.from(result.base64img, 'base64');
-      
-      res.set({
-        'Content-Type': 'image/png',
-        'Content-Disposition': `attachment; filename="ai-removed-${Date.now()}.png"`
-      });
-      res.send(imageBuffer);
-      
-    } catch (aiError) {
-      console.error('❌ Remove.bg API Error:', aiError);
-      
-      if (aiError.message.includes('insufficient credits')) {
-        return res.status(402).json({
-          error: 'Insufficient credits',
-          message: 'Your Remove.bg account has insufficient credits'
-        });
-      } else if (aiError.message.includes('Invalid API key')) {
-        return res.status(401).json({
-          error: 'Invalid API key',
-          message: 'Please check your Remove.bg API key'
-        });
-      } else {
-        return res.status(500).json({
-          error: 'AI processing failed',
-          details: aiError.message
-        });
-      }
-    }
+    const bgColor = detectBackgroundColor(data, info.width, info.height, info.channels);
+    console.log('🎨 Background detected for trimming:', bgColor);
+    
+    // Sadece trim işlemi - arkaplan kaldırma YOK
+    console.log('✂️ Step 2: Trimming edges only...');
+    const trimmedBuffer = await sharp(imagePath)
+      .trim({
+        background: bgColor,
+        threshold: threshold
+      })
+      .png({
+        quality: 100,
+        compressionLevel: 0,
+        adaptiveFiltering: true
+      })
+      .toBuffer();
+    
+    console.log('✅ Success: Image trimmed (background preserved)');
+    
+    res.set({
+      'Content-Type': 'image/png',
+      'Content-Disposition': `attachment; filename="trimmed-${Date.now()}.png"`
+    });
+    res.send(trimmedBuffer);
     
   } catch (error) {
-    console.error('❌ General Error:', error);
+    console.error('❌ Trim Error:', error);
     res.status(500).json({ 
-      error: 'Failed to process image',
+      error: 'Failed to trim image',
       details: error.message 
     });
   } finally {
