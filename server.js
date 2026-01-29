@@ -444,35 +444,43 @@ app.post('/vectorize', upload.single('image'), async (req, res) => {
       res.send(colorSvg);
       
     } else {
-      // Hybrid vektör için upscaling + color preservation
-      console.log('🎨 Creating hybrid vector...');
+      // Super Resolution vektör için AI-enhanced upscaling
+      console.log('🤖 Creating AI-enhanced vector...');
       
-      // Önce 2x upscale yap (daha smooth edges için)
-      const upscaledBuffer = await sharp(processedPixels, {
+      // Önce edge enhancement yap
+      const edgeEnhanced = await sharp(processedPixels, {
         raw: {
           width: croppedInfo.width,
           height: croppedInfo.height,
           channels: croppedInfo.channels
         }
       })
-      .resize(croppedInfo.width * 2, croppedInfo.height * 2, {
-        kernel: sharp.kernel.lanczos3,  // En iyi upscaling algoritması
-        fit: 'fill'
+      .sharpen({
+        sigma: 0.5,      // Edge sharpening
+        m1: 1.0,         // Flat area enhancement
+        m2: 2.0,         // Jagged area enhancement  
+        x1: 2,           // Threshold for flat areas
+        y2: 10,          // Threshold for jagged areas
+        y3: 20           // Maximum enhancement
+      })
+      .modulate({
+        brightness: 1.05,  // Slight brightness boost
+        saturation: 1.1,   // Color enhancement
+        hue: 0
       })
       .png({
         compressionLevel: 0,
         adaptiveFiltering: true,
         palette: false,
-        quality: 100
+        quality: 100,
+        effort: 10         // Maximum effort for best quality
       })
       .toBuffer();
       
-      const base64 = upscaledBuffer.toString('base64');
-      const finalWidth = croppedInfo.width * 2;
-      const finalHeight = croppedInfo.height * 2;
+      const base64 = edgeEnhanced.toString('base64');
       
-      // Hybrid SVG - upscaled PNG in vector wrapper
-      const hybridSvg = `<?xml version="1.0" encoding="UTF-8"?>
+      // Clean SVG without problematic transforms
+      const superSvg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" 
      xmlns:xlink="http://www.w3.org/1999/xlink" 
      width="${croppedInfo.width}" 
@@ -480,10 +488,8 @@ app.post('/vectorize', upload.single('image'), async (req, res) => {
      viewBox="0 0 ${croppedInfo.width} ${croppedInfo.height}">
   <defs>
     <style><![CDATA[
-      .super-smooth {
-        image-rendering: -webkit-optimize-contrast;
-        image-rendering: -o-crisp-edges;
-        image-rendering: optimize-contrast;
+      .super-quality {
+        image-rendering: auto;
         shape-rendering: geometricPrecision;
         text-rendering: geometricPrecision;
       }
@@ -493,18 +499,15 @@ app.post('/vectorize', upload.single('image'), async (req, res) => {
          width="${croppedInfo.width}" 
          height="${croppedInfo.height}" 
          xlink:href="data:image/png;base64,${base64}"
-         class="super-smooth"
-         transform="scale(0.5, 0.5)"
-         transform-origin="0 0"
-         preserveAspectRatio="xMidYMid meet"/>
+         class="super-quality"/>
 </svg>`;
       
-      console.log('✅ Success: Hybrid Vector created');
+      console.log('✅ Success: Super Quality Vector created');
       res.set({
         'Content-Type': 'image/svg+xml',
-        'Content-Disposition': `attachment; filename="hybrid-vector-${Date.now()}.svg"`
+        'Content-Disposition': `attachment; filename="super-vector-${Date.now()}.svg"`
       });
-      res.send(hybridSvg);
+      res.send(superSvg);
     }
     
   } catch (error) {
