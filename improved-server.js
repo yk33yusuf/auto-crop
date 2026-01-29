@@ -418,20 +418,24 @@ app.post('/trim', upload.single('image'), async (req, res) => {
     }
     
     imagePath = imageFile.path;
-    const threshold = parseInt(req.body.threshold) || 15;
+    const threshold = parseInt(req.body.threshold) || 10;
     
     console.log('✂️ Step 1: Trim-only processing...');
     console.log('📊 Threshold:', threshold);
     
-    // Sharp'ın kendi trim fonksiyonunu kullan - background detection otomatik
-    console.log('✂️ Step 2: Trimming edges only (background preserved)...');
-    const trimmedBuffer = await sharp(imagePath)
-      .trim(threshold) // Simple trim with threshold only
-      .png({
-        quality: 100,
-        compressionLevel: 0,
-        adaptiveFiltering: true
+    // Basit trim işlemi - Sharp'ın default behavior'ı
+    console.log('✂️ Step 2: Simple trimming...');
+    
+    const image = sharp(imagePath);
+    const metadata = await image.metadata();
+    
+    console.log(`📏 Original size: ${metadata.width}x${metadata.height}`);
+    
+    const trimmedBuffer = await image
+      .trim({
+        threshold: threshold
       })
+      .png()
       .toBuffer();
     
     console.log('✅ Success: Image trimmed (background preserved)');
@@ -443,7 +447,7 @@ app.post('/trim', upload.single('image'), async (req, res) => {
     res.send(trimmedBuffer);
     
   } catch (error) {
-    console.error('❌ Trim Error:', error);
+    console.error('❌ Trim Error Details:', error);
     res.status(500).json({ 
       error: 'Failed to trim image',
       details: error.message 
