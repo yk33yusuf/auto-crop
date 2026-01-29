@@ -211,13 +211,16 @@
             </div>
             
             <div class="control-group">
-                <label>📊 İşlem Bilgisi</label>
-                <div id="processingInfo">
-                    <div>✨ Akıllı arkaplan tespiti</div>
-                    <div>🧹 Gelişmiş renk algoritması</div>
-                    <div>🔧 Anti-aliasing temizleme</div>
-                    <div>🪄 Kenar düzeltme</div>
+                <label>🎚️ Output Format</label>
+                <div style="margin: 10px 0;">
+                    <input type="radio" id="formatPng" name="outputFormat" value="png" checked>
+                    <label for="formatPng" style="display: inline; margin-left: 5px;">PNG (Raster)</label>
                 </div>
+                <div style="margin: 10px 0;">
+                    <input type="radio" id="formatSvg" name="outputFormat" value="svg">
+                    <label for="formatSvg" style="display: inline; margin-left: 5px;">SVG (Vector)</label>
+                </div>
+                <small>Vector format çözünürlük kaybı olmadan ölçeklenir ve pikselleşme olmaz</small>
             </div>
         </div>
         
@@ -356,14 +359,31 @@
                 results.style.display = 'none';
                 errorDiv.style.display = 'none';
                 
+                // Format seçimini al
+                const formatRadios = document.getElementsByName('outputFormat');
+                let selectedFormat = 'png';
+                for (const radio of formatRadios) {
+                    if (radio.checked) {
+                        selectedFormat = radio.value;
+                        break;
+                    }
+                }
+                
                 const formData = new FormData();
                 formData.append('image', selectedFile);
                 formData.append('threshold', thresholdSlider.value);
                 
-                console.log('📤 Sending request to:', `${API_URL}/crop`);
-                console.log('📊 Threshold:', thresholdSlider.value);
+                let endpoint = '/crop';
+                if (selectedFormat === 'svg') {
+                    endpoint = '/vectorize';
+                    formData.append('format', 'svg');
+                }
                 
-                const response = await fetch(`${API_URL}/crop`, {
+                console.log('📤 Sending request to:', `${API_URL}${endpoint}`);
+                console.log('📊 Threshold:', thresholdSlider.value);
+                console.log('🎨 Format:', selectedFormat);
+                
+                const response = await fetch(`${API_URL}${endpoint}`, {
                     method: 'POST',
                     body: formData
                 });
@@ -382,15 +402,29 @@
                 }
                 
                 processedBlob = await response.blob();
-                const processedUrl = URL.createObjectURL(processedBlob);
                 
-                processedImg.src = processedUrl;
+                // SVG için özel handling
+                if (selectedFormat === 'svg') {
+                    const svgText = await processedBlob.text();
+                    const svgBlob = new Blob([svgText], { type: 'image/svg+xml' });
+                    processedBlob = svgBlob;
+                    
+                    // SVG'yi img tag'inde göster
+                    const svgUrl = URL.createObjectURL(svgBlob);
+                    processedImg.src = svgUrl;
+                } else {
+                    // PNG için normal handling
+                    const processedUrl = URL.createObjectURL(processedBlob);
+                    processedImg.src = processedUrl;
+                }
+                
                 downloadBtn.style.display = 'block';
                 
                 processing.style.display = 'none';
                 results.style.display = 'grid';
                 
-                showMessage('✅ İşlem başarıyla tamamlandı!', 'success');
+                const formatText = selectedFormat === 'svg' ? 'Vektör (SVG)' : 'PNG';
+                showMessage(`✅ İşlem başarıyla tamamlandı! Format: ${formatText}`, 'success');
                 
                 console.log('✅ Processing completed successfully');
                 
@@ -406,16 +440,30 @@
         function downloadImage() {
             if (!processedBlob) return;
             
+            // Format'ı kontrol et
+            const formatRadios = document.getElementsByName('outputFormat');
+            let selectedFormat = 'png';
+            for (const radio of formatRadios) {
+                if (radio.checked) {
+                    selectedFormat = radio.value;
+                    break;
+                }
+            }
+            
             const url = URL.createObjectURL(processedBlob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `cropped-${Date.now()}.png`;
+            
+            const timestamp = Date.now();
+            const extension = selectedFormat === 'svg' ? 'svg' : 'png';
+            a.download = `yerlikaya-cropped-${timestamp}.${extension}`;
+            
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             
-            console.log('💾 Image downloaded');
+            console.log('💾 Image downloaded as', extension.toUpperCase());
         }
         
         function showMessage(message, type) {
