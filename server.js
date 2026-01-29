@@ -33,12 +33,17 @@ function colorDistance(r1, g1, b1, r2, g2, b2) {
   const deltaG = Math.abs(g1 - g2);
   const deltaB = Math.abs(b1 - b2);
   
-  // Simple weighted distance
+  // Simple weighted distance - prioritize green channel
   return deltaR * 0.3 + deltaG * 0.59 + deltaB * 0.11;
 }
 
-// Basit background detection
+// Threshold 0 için hassas background detection
 function isBackgroundColor(r, g, b, bgColor, threshold) {
+  if (threshold === 0) {
+    // Threshold 0: Sadece tam eşleşmeleri kabul et
+    return r === bgColor.r && g === bgColor.g && b === bgColor.b;
+  }
+  
   const distance = colorDistance(r, g, b, bgColor.r, bgColor.g, bgColor.b);
   return distance <= threshold;
 }
@@ -139,13 +144,14 @@ function morphologicalClose(data, width, height, channels) {
   return result;
 }
 
-// Basit ve etkili background removal
+// Text-aware background removal
 function cleanAntiAliasing(data, width, height, channels, bgColor, threshold) {
   const result = Buffer.from(data);
   
   console.log('🎨 Background color for cleaning:', bgColor);
+  console.log('📊 Threshold value:', threshold);
   
-  // Basit approach: her pikseli kontrol et
+  // Her pikseli kontrol et
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const offset = (y * width + x) * channels;
@@ -154,17 +160,55 @@ function cleanAntiAliasing(data, width, height, channels, bgColor, threshold) {
       const b = result[offset + 2];
       const alpha = result[offset + 3];
       
-      // Arkaplan rengine benzer mi?
+      // Skip transparent pixels
+      if (alpha === 0) continue;
+      
+      // Check if it's definitely background
       if (isBackgroundColor(r, g, b, bgColor, threshold)) {
-        result[offset + 3] = 0; // Şeffaf yap
+        result[offset + 3] = 0; // Make transparent
+        continue;
       }
-      // Anti-aliasing için gradual transparency
-      else {
+      
+      // Text edge protection - don't touch high contrast areas
+      if (threshold > 0) {
         const distance = colorDistance(r, g, b, bgColor.r, bgColor.g, bgColor.b);
-        if (distance <= threshold * 1.3) {
-          // Kenar pikseli - kısmi şeffaflık
-          const fadeRatio = (distance - threshold) / (threshold * 0.3);
-          result[offset + 3] = Math.floor(alpha * Math.max(0.1, Math.min(1, fadeRatio)));
+        
+        // Check if this pixel is near high-contrast content (likely text)
+        let isNearText = false;
+        const checkRadius = 2;
+        
+        for (let dy = -checkRadius; dy <= checkRadius && !isNearText; dy++) {
+          for (let dx = -checkRadius; dx <= checkRadius && !isNearText; dx++) {
+            const nx = x + dx;
+            const ny = y + dy;
+            
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+              const nOffset = (ny * width + nx) * channels;
+              const nr = result[nOffset];
+              const ng = result[nOffset + 1];
+              const nb = result[nOffset + 2];
+              
+              // Check for high contrast (likely text)
+              const pixelBrightness = (r + g + b) / 3;
+              const neighborBrightness = (nr + ng + nb) / 3;
+              const contrastDiff = Math.abs(pixelBrightness - neighborBrightness);
+              
+              if (contrastDiff > 100) { // High contrast detected
+                isNearText = true;
+              }
+            }
+          }
+        }
+        
+        // If near text, be more conservative with removal
+        if (isNearText && distance <= threshold * 2.0) {
+          // Don't remove - preserve text edges
+          continue;
+        } else if (!isNearText && distance <= threshold * 1.5) {
+          // Safe to apply gradual transparency
+          const fadeRatio = (distance - threshold) / (threshold * 0.5);
+          const newAlpha = Math.floor(alpha * Math.max(0.1, Math.min(1, fadeRatio)));
+          result[offset + 3] = newAlpha;
         }
       }
     }
@@ -212,7 +256,7 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     }
     
     imagePath = imageFile.path;
-    const threshold = parseInt(req.body.threshold) || 25; // Balanced threshold
+    const threshold = parseInt(req.body.threshold) || 15; // Sensitive threshold for precise cleaning
     
     console.log('🔍 Step 1: Loading and analyzing image...');
     
