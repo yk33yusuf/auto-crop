@@ -211,21 +211,17 @@
             </div>
             
             <div class="control-group">
-                <label>🎚️ Output Format</label>
+                <label>🎚️ Output Quality</label>
                 <div style="margin: 10px 0;">
-                    <input type="radio" id="formatPng" name="outputFormat" value="png" checked>
-                    <label for="formatPng" style="display: inline; margin-left: 5px;">PNG (Raster)</label>
+                    <input type="radio" id="qualityStandard" name="outputQuality" value="standard" checked>
+                    <label for="qualityStandard" style="display: inline; margin-left: 5px;">Standard PNG</label>
                 </div>
                 <div style="margin: 10px 0;">
-                    <input type="radio" id="formatSvgColor" name="outputFormat" value="svg-color">
-                    <label for="formatSvgColor" style="display: inline; margin-left: 5px;">SVG (Color Vector)</label>
+                    <input type="radio" id="qualityPremium" name="outputQuality" value="premium">
+                    <label for="qualityPremium" style="display: inline; margin-left: 5px;">Premium PNG</label>
                 </div>
-                <div style="margin: 10px 0;">
-                    <input type="radio" id="formatSvgSuper" name="outputFormat" value="svg-super">
-                    <label for="formatSvgSuper" style="display: inline; margin-left: 5px;">SVG (Super Quality)</label>
-                </div>
-                <small>Color Vector: Standart kalite, hızlı<br>
-                       Super Quality: Edge enhancement + sharpening, en iyi kalite</small>
+                <small>Standard: Hızlı işlem, iyi kalite<br>
+                       Premium: Canva-style edge detection, en iyi kalite</small>
             </div>
         </div>
         
@@ -364,12 +360,12 @@
                 results.style.display = 'none';
                 errorDiv.style.display = 'none';
                 
-                // Format seçimini al
-                const formatRadios = document.getElementsByName('outputFormat');
-                let selectedFormat = 'png';
-                for (const radio of formatRadios) {
+                // Quality seçimini al
+                const qualityRadios = document.getElementsByName('outputQuality');
+                let selectedQuality = 'standard';
+                for (const radio of qualityRadios) {
                     if (radio.checked) {
-                        selectedFormat = radio.value;
+                        selectedQuality = radio.value;
                         break;
                     }
                 }
@@ -377,17 +373,13 @@
                 const formData = new FormData();
                 formData.append('image', selectedFile);
                 formData.append('threshold', thresholdSlider.value);
+                formData.append('quality', selectedQuality);
                 
                 let endpoint = '/crop';
-                if (selectedFormat.startsWith('svg')) {
-                    endpoint = '/vectorize';
-                    const colorMode = selectedFormat === 'svg-super' ? 'hybrid' : 'color';
-                    formData.append('colorMode', colorMode);
-                }
                 
                 console.log('📤 Sending request to:', `${API_URL}${endpoint}`);
                 console.log('📊 Threshold:', thresholdSlider.value);
-                console.log('🎨 Format:', selectedFormat);
+                console.log('🎨 Quality:', selectedQuality);
                 
                 const response = await fetch(`${API_URL}${endpoint}`, {
                     method: 'POST',
@@ -408,32 +400,16 @@
                 }
                 
                 processedBlob = await response.blob();
-                
-                // SVG için özel handling
-                if (selectedFormat.startsWith('svg')) {
-                    const svgText = await processedBlob.text();
-                    const svgBlob = new Blob([svgText], { type: 'image/svg+xml' });
-                    processedBlob = svgBlob;
-                    
-                    // SVG'yi img tag'inde göster
-                    const svgUrl = URL.createObjectURL(svgBlob);
-                    processedImg.src = svgUrl;
-                } else {
-                    // PNG için normal handling
-                    const processedUrl = URL.createObjectURL(processedBlob);
-                    processedImg.src = processedUrl;
-                }
+                const processedUrl = URL.createObjectURL(processedBlob);
+                processedImg.src = processedUrl;
                 
                 downloadBtn.style.display = 'block';
                 
                 processing.style.display = 'none';
                 results.style.display = 'grid';
                 
-                let formatText = 'PNG';
-                if (selectedFormat === 'svg-color') formatText = 'Color Vector (SVG)';
-                else if (selectedFormat === 'svg-super') formatText = 'Super Quality Vector (SVG)';
-                
-                showMessage(`✅ İşlem başarıyla tamamlandı! Format: ${formatText}`, 'success');
+                const qualityText = selectedQuality === 'premium' ? 'Premium PNG' : 'Standard PNG';
+                showMessage(`✅ İşlem başarıyla tamamlandı! Format: ${qualityText}`, 'success');
                 
                 console.log('✅ Processing completed successfully');
                 
@@ -449,12 +425,12 @@
         function downloadImage() {
             if (!processedBlob) return;
             
-            // Format'ı kontrol et
-            const formatRadios = document.getElementsByName('outputFormat');
-            let selectedFormat = 'png';
-            for (const radio of formatRadios) {
+            // Quality'yi kontrol et
+            const qualityRadios = document.getElementsByName('outputQuality');
+            let selectedQuality = 'standard';
+            for (const radio of qualityRadios) {
                 if (radio.checked) {
-                    selectedFormat = radio.value;
+                    selectedQuality = radio.value;
                     break;
                 }
             }
@@ -464,15 +440,15 @@
             a.href = url;
             
             const timestamp = Date.now();
-            const extension = selectedFormat === 'svg' ? 'svg' : 'png';
-            a.download = `yerlikaya-cropped-${timestamp}.${extension}`;
+            const qualityPrefix = selectedQuality === 'premium' ? 'premium' : 'standard';
+            a.download = `yerlikaya-${qualityPrefix}-${timestamp}.png`;
             
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             
-            console.log('💾 Image downloaded as', extension.toUpperCase());
+            console.log('💾 Image downloaded as', `${qualityPrefix} PNG`);
         }
         
         function showMessage(message, type) {
@@ -505,4 +481,3 @@
     </script>
 </body>
 </html>
-
