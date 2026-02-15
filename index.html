@@ -238,7 +238,7 @@
 <body>
     <div class="container">
         <h1>🎯 Yerlikaya Auto Crop Tool v3.0 <span class="ai-badge">AI POWERED</span></h1>
-        <p class="subtitle">AI Background Removal + Smart Auto Crop</p>
+        <p class="subtitle">Smart Background Removal + Auto Crop</p>
 
         
         <div class="upload-section" id="uploadSection">
@@ -250,64 +250,58 @@
         <div class="controls">
             <!-- AI Background Removal Section -->
             <div class="control-group ai-section">
-                <label>🤖 AI Background Removal</label>
+                <label>🤖 Background Removal</label>
                 
                 <div class="checkbox-wrapper">
                     <input type="checkbox" id="useAiRemoval" checked>
                     <label for="useAiRemoval">
-                        Use AI-powered background removal
+                        Remove background
                     </label>
                 </div>
 
-                <div class="info-text">
-                    ✨ <strong>Recommended:</strong> AI removes backgrounds with high accuracy using deep learning models.
-                    <br>
-                    ⚡ Processing time: 5-15 seconds
+                <div id="methodSelection" style="margin-top: 15px;">
+                    <label style="font-size: 14px; margin-bottom: 10px;">Method:</label>
+                    
+                    <div style="margin: 10px 0;">
+                        <input type="radio" id="methodColor" name="bgMethod" value="color" checked>
+                        <label for="methodColor" style="display: inline; margin-left: 5px; font-weight: normal;">
+                            🎨 Color-based (Smart, Fast)
+                        </label>
+                    </div>
+                    
+                    <div style="margin: 10px 0;">
+                        <input type="radio" id="methodAi" name="bgMethod" value="ai">
+                        <label for="methodAi" style="display: inline; margin-left: 5px; font-weight: normal;">
+                            🤖 AI-powered (Slow, Photos)
+                        </label>
+                    </div>
+
+                    <div class="info-text" id="methodInfo">
+                        ✨ <strong>Color-based:</strong> Perfect for graphics, logos, and designs with solid backgrounds. Auto-detects and removes background color.
+                    </div>
                 </div>
             </div>
 
-            <!-- Processing Method Section -->
-            <div class="control-group">
-                <label>🎚️ Processing Method</label>
-                <div style="margin: 10px 0;">
-                    <input type="radio" id="methodStandard" name="processingMethod" value="standard" checked>
-                    <label for="methodStandard" style="display: inline; margin-left: 5px;">Standard (Fast)</label>
-                </div>
-                <div style="margin: 10px 0;">
-                    <input type="radio" id="methodPremium" name="processingMethod" value="premium">
-                    <label for="methodPremium" style="display: inline; margin-left: 5px;">Premium (Better Quality)</label>
-                </div>
-                <div style="margin: 10px 0;">
-                    <input type="radio" id="methodTrimOnly" name="processingMethod" value="trim-only">
-                    <label for="methodTrimOnly" style="display: inline; margin-left: 5px;">✂️ Trim Only</label>
-                </div>
+            <!-- Color Threshold Section -->
+            <div class="control-group" id="colorThresholdSection">
+                <label for="colorThreshold">🎨 Color Sensitivity</label>
+                <input type="range" id="colorThreshold" min="10" max="60" value="30" step="5">
+                <div>Value: <span class="threshold-value" id="colorThresholdValue">30</span></div>
                 <small>
-                    <strong>Standard:</strong> Quick background removal + crop<br>
-                    <strong>Premium:</strong> Canva-style edge detection<br>
-                    <strong>Trim Only:</strong> Just crop (preserves background)
-                </small>
-            </div>
-
-            <!-- Threshold Section (sadece Standard/Premium için) -->
-            <div class="control-group" id="thresholdSection">
-                <label for="threshold">🎚️ Sensitivity Threshold</label>
-                <input type="range" id="threshold" min="0" max="50" value="15" step="1">
-                <div>Değer: <span class="threshold-value" id="thresholdValue">15</span></div>
-                <small>
-                    <strong>0:</strong> Most sensitive (max cleanup)<br>
-                    <strong>15:</strong> Balanced (recommended)<br>
-                    <strong>25+:</strong> Tolerant (minimal cleanup)
+                    <strong>10-20:</strong> Strict (precise color match)<br>
+                    <strong>30:</strong> Balanced (recommended)<br>
+                    <strong>40-60:</strong> Tolerant (includes similar colors)
                 </small>
             </div>
         </div>
         
         <button id="processBtn" class="ai-button" disabled>
-            🚀 Process with AI
+            🎨 Remove Background & Crop
         </button>
         
         <div id="processing" class="processing" style="display: none;">
             <div>⏳ Processing... Please wait</div>
-            <div style="margin-top: 10px;">This may take 10-30 seconds.</div>
+            <div style="margin-top: 10px;" id="processingTime">This may take 5-10 seconds.</div>
         </div>
         
         <div id="results" class="results" style="display: none;">
@@ -319,7 +313,7 @@
                 <h3>✨ Processed Image</h3>
                 <img id="processedImg" src="" alt="Processed">
                 <button id="downloadBtn" class="download-btn" style="display: none;">
-                    💾 Download
+                    💾 Download PNG
                 </button>
             </div>
         </div>
@@ -328,49 +322,56 @@
     </div>
 
     <script>
-        // DOM elementlerini al
+        // DOM elements
         const fileInput = document.getElementById('fileInput');
         const processBtn = document.getElementById('processBtn');
-        const thresholdSlider = document.getElementById('threshold');
-        const thresholdValue = document.getElementById('thresholdValue');
+        const colorThresholdSlider = document.getElementById('colorThreshold');
+        const colorThresholdValue = document.getElementById('colorThresholdValue');
         const uploadSection = document.getElementById('uploadSection');
         const results = document.getElementById('results');
         const processing = document.getElementById('processing');
+        const processingTime = document.getElementById('processingTime');
         const errorDiv = document.getElementById('errorDiv');
         const originalImg = document.getElementById('originalImg');
         const processedImg = document.getElementById('processedImg');
         const downloadBtn = document.getElementById('downloadBtn');
         const useAiRemoval = document.getElementById('useAiRemoval');
-        const thresholdSection = document.getElementById('thresholdSection');
+        const methodSelection = document.getElementById('methodSelection');
+        const colorThresholdSection = document.getElementById('colorThresholdSection');
+        const methodInfo = document.getElementById('methodInfo');
         
         let selectedFile = null;
         let processedBlob = null;
         
-        // API URL
         const API_URL = window.location.origin;
         
-        // Sayfa yüklendiğinde
+        // Page load
         document.addEventListener('DOMContentLoaded', function() {
-            thresholdValue.textContent = thresholdSlider.value;
+            colorThresholdValue.textContent = colorThresholdSlider.value;
             console.log('🚀 Page loaded, API URL:', API_URL);
             checkApiStatus();
         });
         
         // AI checkbox change
         useAiRemoval.addEventListener('change', function() {
+            methodSelection.style.display = this.checked ? 'block' : 'none';
+            colorThresholdSection.style.display = this.checked ? 'block' : 'none';
             updateButtonText();
         });
 
         // Method change
-        document.querySelectorAll('input[name="processingMethod"]').forEach(radio => {
+        document.querySelectorAll('input[name="bgMethod"]').forEach(radio => {
             radio.addEventListener('change', function() {
-                // Trim-only seçildiğinde threshold'u gizle
-                if (this.value === 'trim-only') {
-                    thresholdSection.style.opacity = '0.5';
-                    thresholdSlider.disabled = true;
+                if (this.value === 'color') {
+                    colorThresholdSection.style.opacity = '1';
+                    colorThresholdSlider.disabled = false;
+                    methodInfo.innerHTML = '✨ <strong>Color-based:</strong> Perfect for graphics, logos, and designs with solid backgrounds. Auto-detects and removes background color.';
+                    processingTime.textContent = 'This may take 2-5 seconds.';
                 } else {
-                    thresholdSection.style.opacity = '1';
-                    thresholdSlider.disabled = false;
+                    colorThresholdSection.style.opacity = '0.5';
+                    colorThresholdSlider.disabled = true;
+                    methodInfo.innerHTML = '🤖 <strong>AI-powered:</strong> Best for photos and complex backgrounds. Uses deep learning model.';
+                    processingTime.textContent = 'This may take 10-30 seconds.';
                 }
                 updateButtonText();
             });
@@ -378,45 +379,45 @@
 
         function updateButtonText() {
             const useAi = useAiRemoval.checked;
-            const method = document.querySelector('input[name="processingMethod"]:checked').value;
+            const method = document.querySelector('input[name="bgMethod"]:checked')?.value || 'color';
             
-            if (useAi) {
-                processBtn.textContent = '🤖 Process with AI';
+            if (!useAi) {
+                processBtn.textContent = '✂️ Crop Only';
+                processBtn.className = '';
+            } else if (method === 'color') {
+                processBtn.textContent = '🎨 Remove Background & Crop';
                 processBtn.className = 'ai-button';
-            } else if (method === 'trim-only') {
-                processBtn.textContent = '✂️ Trim Only';
-                processBtn.className = '';
             } else {
-                processBtn.textContent = '🚀 Process (Classic Method)';
-                processBtn.className = '';
+                processBtn.textContent = '🤖 AI Remove & Crop';
+                processBtn.className = 'ai-button';
             }
         }
         
-        // Threshold slider değişimi
-        thresholdSlider.addEventListener('input', function(e) {
-            thresholdValue.textContent = e.target.value;
+        // Color threshold slider
+        colorThresholdSlider.addEventListener('input', function(e) {
+            colorThresholdValue.textContent = e.target.value;
         });
         
-        // Dosya seçimi
+        // File select
         fileInput.addEventListener('change', function(event) {
             handleFileSelect(event);
         });
         
-        // İşleme butonu
+        // Process button
         processBtn.addEventListener('click', function() {
             if (selectedFile) {
                 processImage();
             }
         });
         
-        // İndirme butonu
+        // Download button
         downloadBtn.addEventListener('click', function() {
             if (processedBlob) {
                 downloadImage();
             }
         });
         
-        // Drag & Drop events
+        // Drag & Drop
         uploadSection.addEventListener('dragover', function(e) {
             e.preventDefault();
             uploadSection.classList.add('drag-over');
@@ -446,7 +447,6 @@
                 selectedFile = file;
                 processBtn.disabled = false;
                 
-                // Orijinal resmi göster
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     originalImg.src = e.target.result;
@@ -475,36 +475,26 @@
                 errorDiv.style.display = 'none';
                 
                 const useAi = useAiRemoval.checked;
-                const methodRadios = document.getElementsByName('processingMethod');
-                let selectedMethod = 'standard';
-                for (const radio of methodRadios) {
-                    if (radio.checked) {
-                        selectedMethod = radio.value;
-                        break;
-                    }
-                }
+                const method = document.querySelector('input[name="bgMethod"]:checked')?.value || 'color';
                 
                 const formData = new FormData();
                 formData.append('image', selectedFile);
                 
-                let endpoint = '/crop';
+                let endpoint = '/trim'; // Default: just crop
                 
-                // AI kullanılıyorsa /process endpoint'ini kullan
                 if (useAi) {
                     endpoint = '/process';
                     formData.append('remove_bg', 'true');
-                } else if (selectedMethod === 'trim-only') {
-                    endpoint = '/trim';
-                    formData.append('threshold', thresholdSlider.value);
-                } else {
-                    endpoint = '/crop';
-                    formData.append('threshold', thresholdSlider.value);
-                    formData.append('quality', selectedMethod);
+                    formData.append('method', method);
+                    
+                    if (method === 'color') {
+                        formData.append('threshold', colorThresholdSlider.value);
+                    }
                 }
                 
                 console.log('📤 Sending request to:', `${API_URL}${endpoint}`);
-                console.log('🤖 AI enabled:', useAi);
-                console.log('🎨 Method:', selectedMethod);
+                console.log('🎯 Remove BG:', useAi);
+                console.log('🎨 Method:', method);
                 
                 const response = await fetch(`${API_URL}${endpoint}`, {
                     method: 'POST',
@@ -536,10 +526,9 @@
                 processing.style.display = 'none';
                 results.style.display = 'grid';
                 
-                let methodText = useAi ? '🤖 AI-Powered' : 
-                               selectedMethod === 'premium' ? 'Premium' :
-                               selectedMethod === 'trim-only' ? '✂️ Trim Only' : 
-                               'Standard';
+                const methodText = !useAi ? '✂️ Crop Only' : 
+                                  method === 'color' ? '🎨 Color-based' : 
+                                  '🤖 AI-powered';
                 
                 showMessage(`✅ Processing completed! Method: ${methodText}`, 'success');
                 
@@ -557,25 +546,17 @@
         function downloadImage() {
             if (!processedBlob) return;
             
-            const useAi = useAiRemoval.checked;
-            const methodRadios = document.getElementsByName('processingMethod');
-            let selectedMethod = 'standard';
-            for (const radio of methodRadios) {
-                if (radio.checked) {
-                    selectedMethod = radio.value;
-                    break;
-                }
-            }
-            
             const url = URL.createObjectURL(processedBlob);
             const a = document.createElement('a');
             a.href = url;
             
             const timestamp = Date.now();
-            const prefix = useAi ? 'ai-processed' :
-                          selectedMethod === 'premium' ? 'premium' :
-                          selectedMethod === 'trim-only' ? 'trimmed' : 
-                          'standard';
+            const useAi = useAiRemoval.checked;
+            const method = document.querySelector('input[name="bgMethod"]:checked')?.value || 'color';
+            
+            const prefix = !useAi ? 'cropped' :
+                          method === 'color' ? 'color-removed' :
+                          'ai-removed';
             
             a.download = `yerlikaya-${prefix}-${timestamp}.png`;
             
@@ -584,7 +565,7 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             
-            console.log('💾 Image downloaded as', `${prefix} PNG`);
+            console.log('💾 Image downloaded');
         }
         
         function showMessage(message, type) {
@@ -599,22 +580,17 @@
             }, 5000);
         }
         
-        // API durumu kontrol et
         async function checkApiStatus() {
             try {
                 const response = await fetch(`${API_URL}/`);
                 if (response.ok) {
                     const data = await response.json();
                     console.log('🚀 API Status:', data);
-                    if (data.rembgStatus) {
-                        console.log('🤖 Rembg URL:', data.rembgStatus);
-                    }
                 } else {
                     console.warn('⚠️ API response not OK:', response.status);
                 }
             } catch (error) {
                 console.warn('⚠️ API connection issue:', error.message);
-                showMessage('⚠️ Checking API connection...', 'error');
             }
         }
         
