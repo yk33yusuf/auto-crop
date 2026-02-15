@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  auto-crop:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - REMBG_URL=http://rembg:7000
+    depends_on:
+      - rembg
+    restart: unless-stopped
+
+  rembg:
+    image: danielgatis/rembg:latest
+    command: s --host 0.0.0.0 --port 7000 --log_level info
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
