@@ -416,8 +416,9 @@ async function overlayText(imageBuffer, textData) {
 }
 
 
+// OCR'ı KALDIR - artık gerek yok
 
-// Belirli rengi transparent yap
+// Color-based removal (GÜNCELLENMIŞ - yazıları koru)
 async function removeColorBackground(imageBuffer, targetColor = null, threshold = 30) {
   try {
     console.log('🎨 Color-based background removal...');
@@ -425,33 +426,29 @@ async function removeColorBackground(imageBuffer, targetColor = null, threshold 
     const image = sharp(imageBuffer);
     const metadata = await image.metadata();
     
-    // PNG'ye çevir (alpha channel için)
     let { data, info } = await image
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
     
-    // Auto-detect: En çok kullanılan köşe rengini bul
+    // Auto-detect background color (corners)
     if (!targetColor) {
-      const corners = [
-        { r: data[0], g: data[1], b: data[2] }, // Sol üst
-        { r: data[info.width * 4 - 4], g: data[info.width * 4 - 3], b: data[info.width * 4 - 2] }, // Sağ üst
-        { r: data[data.length - info.width * 4], g: data[data.length - info.width * 4 + 1], b: data[data.length - info.width * 4 + 2] }, // Sol alt
-        { r: data[data.length - 4], g: data[data.length - 3], b: data[data.length - 2] } // Sağ alt
-      ];
-      
-      // İlk köşe rengini hedef al (genelde arkaplan)
-      targetColor = corners[0];
-      console.log(`🎯 Auto-detected background color: RGB(${targetColor.r}, ${targetColor.g}, ${targetColor.b})`);
+      // Sol üst köşe
+      targetColor = {
+        r: data[0],
+        g: data[1],
+        b: data[2]
+      };
+      console.log(`🎯 Auto-detected BG: RGB(${targetColor.r}, ${targetColor.g}, ${targetColor.b})`);
     }
     
-    // Her pixel'i kontrol et
+    // Her pixel için
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i];
       const g = data[i + 1];
       const b = data[i + 2];
       
-      // Renk farkını hesapla (Euclidean distance)
+      // Renk farkı
       const colorDiff = Math.sqrt(
         Math.pow(r - targetColor.r, 2) +
         Math.pow(g - targetColor.g, 2) +
@@ -460,11 +457,10 @@ async function removeColorBackground(imageBuffer, targetColor = null, threshold 
       
       // Threshold içindeyse transparent yap
       if (colorDiff <= threshold) {
-        data[i + 3] = 0; // Alpha = 0 (transparent)
+        data[i + 3] = 0; // Transparent
       }
     }
     
-    // Sharp buffer'a geri çevir
     const result = await sharp(data, {
       raw: {
         width: info.width,
@@ -484,9 +480,7 @@ async function removeColorBackground(imageBuffer, targetColor = null, threshold 
   }
 }
 
-
-
-
+// /process endpoint (BASİTLEŞTİRİLMİŞ - OCR yok)
 app.post('/process', upload.single('image'), async (req, res) => {
   let imagePath;
   
@@ -499,7 +493,7 @@ app.post('/process', upload.single('image'), async (req, res) => {
     
     imagePath = imageFile.path;
     const removeBg = req.body.remove_bg !== 'false';
-    const method = req.body.method || 'color'; // 'color' veya 'ai'
+    const method = req.body.method || 'color';
     
     console.log('🚀 Starting processing...');
     console.log('🎯 Remove background:', removeBg);
@@ -510,14 +504,13 @@ app.post('/process', upload.single('image'), async (req, res) => {
     // Background Removal
     if (removeBg) {
       if (method === 'ai') {
-        console.log('🤖 AI background removal (Rembg)...');
+        console.log('🤖 AI background removal...');
         imageBuffer = await removeBackgroundWithRembg(imageBuffer);
       } else {
         console.log('🎨 Color-based background removal...');
-        // Hedef renk (opsiyonel)
+        
         let targetColor = null;
         if (req.body.bg_color) {
-          // Hex to RGB: #7ECCC4 → {r: 126, g: 204, b: 196}
           const hex = req.body.bg_color.replace('#', '');
           targetColor = {
             r: parseInt(hex.substr(0, 2), 16),
@@ -532,13 +525,13 @@ app.post('/process', upload.single('image'), async (req, res) => {
     }
     
     // Auto Crop
-    console.log('✂️ Auto cropping transparent areas...');
+    console.log('✂️ Auto cropping...');
     const croppedBuffer = await sharp(imageBuffer)
       .trim()
       .png()
       .toBuffer();
     
-    console.log('✅ Success: Processing completed');
+    console.log('✅ Success');
     
     res.set({
       'Content-Type': 'image/png',
