@@ -3,6 +3,7 @@ version: '3.8'
 services:
   auto-crop:
     build: .
+    container_name: auto-crop
     ports:
       - "3000:3000"
     environment:
@@ -11,12 +12,23 @@ services:
     depends_on:
       - rembg
     restart: unless-stopped
+    networks:
+      - app-network
 
   rembg:
     image: danielgatis/rembg:latest
+    container_name: rembg
     command: s --host 0.0.0.0 --port 7000 --log_level info
+    expose:
+      - "7000"
     restart: unless-stopped
+    networks:
+      - app-network
     deploy:
       resources:
         limits:
           memory: 2G
+
+networks:
+  app-network:
+    driver: bridge
