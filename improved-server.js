@@ -768,8 +768,6 @@ app.post('/crop', upload.single('image'), async (req, res) => {
 });
 
 
-const Tesseract = require('tesseract.js');
-
 // OCR ile yazıları tespit et
 async function detectText(imagePath) {
     try {
