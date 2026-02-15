@@ -480,6 +480,103 @@ async function removeColorBackground(imageBuffer, targetColor = null, threshold 
   }
 }
 
+
+// Edge-aware color removal
+async function removeColorBackgroundSmart(imageBuffer, targetColor = null, threshold = 30) {
+  try {
+    console.log('🎨 Smart color-based removal...');
+    
+    const image = sharp(imageBuffer);
+    const metadata = await image.metadata();
+    
+    // 1. Edge detection için grayscale
+    const edgeBuffer = await image
+      .clone()
+      .greyscale()
+      .normalise()
+      .convolve({
+        width: 3,
+        height: 3,
+        kernel: [-1, -1, -1, -1, 8, -1, -1, -1, -1] // Laplacian edge detection
+      })
+      .raw()
+      .toBuffer();
+    
+    // 2. Original image data
+    let { data, info } = await image
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    
+    // 3. Auto-detect background (corners average)
+    if (!targetColor) {
+      const corners = [
+        { r: data[0], g: data[1], b: data[2] },
+        { r: data[info.width * 4 - 4], g: data[info.width * 4 - 3], b: data[info.width * 4 - 2] },
+        { r: data[data.length - info.width * 4], g: data[data.length - info.width * 4 + 1], b: data[data.length - info.width * 4 + 2] },
+        { r: data[data.length - 4], g: data[data.length - 3], b: data[data.length - 2] }
+      ];
+      
+      targetColor = {
+        r: Math.round((corners[0].r + corners[1].r + corners[2].r + corners[3].r) / 4),
+        g: Math.round((corners[0].g + corners[1].g + corners[2].g + corners[3].g) / 4),
+        b: Math.round((corners[0].b + corners[1].b + corners[2].b + corners[3].b) / 4)
+      };
+      
+      console.log(`🎯 Auto-detected BG: RGB(${targetColor.r}, ${targetColor.g}, ${targetColor.b})`);
+    }
+    
+    // 4. Process each pixel
+    for (let i = 0; i < data.length; i += 4) {
+      const pixelIndex = i / 4;
+      const edgeStrength = edgeBuffer[pixelIndex];
+      
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      
+      // Color difference
+      const colorDiff = Math.sqrt(
+        Math.pow(r - targetColor.r, 2) +
+        Math.pow(g - targetColor.g, 2) +
+        Math.pow(b - targetColor.b, 2)
+      );
+      
+      // SMART: Kenar varsa koru, yoksa color threshold uygula
+      if (edgeStrength < 50) { // Kenar değil
+        if (colorDiff <= threshold) {
+          data[i + 3] = 0; // Transparent
+        }
+      } else {
+        // Kenar - muhtemelen yazı/nesne, koru
+        // Sadece çok benzer renkteyse sil
+        if (colorDiff <= threshold / 2) {
+          data[i + 3] = 0;
+        }
+      }
+    }
+    
+    const result = await sharp(data, {
+      raw: {
+        width: info.width,
+        height: info.height,
+        channels: 4
+      }
+    })
+    .png()
+    .toBuffer();
+    
+    console.log('✅ Smart removal completed');
+    return result;
+    
+  } catch (error) {
+    console.error('❌ Smart removal error:', error);
+    throw error;
+  }
+}
+
+
+
 // /process endpoint (BASİTLEŞTİRİLMİŞ - OCR yok)
 app.post('/process', upload.single('image'), async (req, res) => {
   let imagePath;
@@ -520,7 +617,7 @@ app.post('/process', upload.single('image'), async (req, res) => {
         }
         
         const threshold = parseInt(req.body.threshold) || 30;
-        imageBuffer = await removeColorBackground(imageBuffer, targetColor, threshold);
+        imageBuffer = await removeColorBackgroundSmart(imageBuffer, targetColor, threshold);
       }
     }
     
