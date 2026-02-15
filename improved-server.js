@@ -3,8 +3,12 @@ const multer = require('multer');
 const cors = require('cors');
 const sharp = require('sharp');
 const fs = require('fs').promises;
+const axios = require('axios');
+const FormData = require('form-data');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+const REMBG_URL = process.env.REMBG_URL || 'http://rembg:7000';
 
 app.use(cors());
 app.use(express.json());
@@ -26,6 +30,9 @@ const upload = multer({
 
 // uploads klasörünü oluştur
 fs.mkdir('uploads', { recursive: true });
+
+// [Tüm mevcut helper fonksiyonlarını koru: colorDistance, isBackgroundColor, detectBackgroundColor, morphologicalClose, simpleBackgroundRemoval, canvaStyleBackgroundRemoval]
+// ... (bunları değiştirme, aynı kalsın)
 
 // Basit ve etkili renk benzerlik hesaplama
 function colorDistance(r1, g1, b1, r2, g2, b2) {
@@ -268,25 +275,154 @@ function canvaStyleBackgroundRemoval(data, width, height, channels, bgColor, thr
   return result;
 }
 
-// Health check
+// 🆕 REMBG HELPER FUNCTION
+async function removeBackgroundWithRembg(imageBuffer) {
+  try {
+    console.log('🤖 Calling rembg API...');
+    
+    const formData = new FormData();
+    formData.append('file', imageBuffer, {
+      filename: 'image.png',
+      contentType: 'image/png'
+    });
+
+    const response = await axios.post(
+      `${REMBG_URL}/api/remove`,
+      formData,
+      {
+        headers: formData.getHeaders(),
+        responseType: 'arraybuffer',
+        timeout: 60000, // 60 saniye timeout
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+      }
+    );
+
+    console.log('✅ Rembg processing completed');
+    return Buffer.from(response.data);
+    
+  } catch (error) {
+    console.error('❌ Rembg error:', error.message);
+    throw new Error(`Background removal failed: ${error.message}`);
+  }
+}
+
+// Health check - güncelle
 app.get('/', (req, res) => {
   res.json({ 
     status: 'ok',
-    service: 'Enhanced Auto Crop API',
-    version: '2.0.0',
+    service: 'Enhanced Auto Crop API with AI Background Removal',
+    version: '3.0.0',
     endpoints: {
-      crop: 'POST /crop'
+      crop: 'POST /crop - Smart crop with optional AI background removal',
+      trim: 'POST /trim - Simple trim only',
+      removeBg: 'POST /remove-bg - AI background removal only',
+      process: 'POST /process - AI background removal + auto crop'
     },
     features: [
+      'AI-powered background removal (rembg)',
       'Smart background detection',
       'Advanced color similarity',
       'Anti-aliasing cleanup',
       'Edge smoothing',
       'Morphological operations'
-    ]
+    ],
+    rembgStatus: REMBG_URL
   });
 });
 
+// 🆕 YENİ ENDPOINT: Sadece Background Removal
+app.post('/remove-bg', upload.single('image'), async (req, res) => {
+  let imagePath;
+  
+  try {
+    const imageFile = req.file;
+    
+    if (!imageFile) {
+      return res.status(400).json({ error: 'Image file required' });
+    }
+    
+    imagePath = imageFile.path;
+    
+    console.log('🤖 Step 1: Reading image...');
+    const imageBuffer = await fs.readFile(imagePath);
+    
+    console.log('🤖 Step 2: Removing background with AI...');
+    const resultBuffer = await removeBackgroundWithRembg(imageBuffer);
+    
+    console.log('✅ Success: Background removed');
+    
+    res.set({
+      'Content-Type': 'image/png',
+      'Content-Disposition': `attachment; filename="nobg-${Date.now()}.png"`
+    });
+    res.send(resultBuffer);
+    
+  } catch (error) {
+    console.error('❌ Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to remove background',
+      details: error.message 
+    });
+  } finally {
+    if (imagePath) await fs.unlink(imagePath).catch(() => {});
+  }
+});
+
+// 🆕 YENİ ENDPOINT: AI Background Removal + Auto Crop
+app.post('/process', upload.single('image'), async (req, res) => {
+  let imagePath;
+  
+  try {
+    const imageFile = req.file;
+    
+    if (!imageFile) {
+      return res.status(400).json({ error: 'Image file required' });
+    }
+    
+    imagePath = imageFile.path;
+    const removeBg = req.body.remove_bg !== 'false'; // Default true
+    
+    console.log('🚀 Starting AI-powered processing...');
+    console.log('🎯 Remove background:', removeBg);
+    
+    let imageBuffer = await fs.readFile(imagePath);
+    
+    // Step 1: AI Background Removal (opsiyonel)
+    if (removeBg) {
+      console.log('🤖 Step 1: AI background removal...');
+      imageBuffer = await removeBackgroundWithRembg(imageBuffer);
+    } else {
+      console.log('⏭️ Step 1: Skipping background removal...');
+    }
+    
+    // Step 2: Auto Crop
+    console.log('✂️ Step 2: Auto cropping transparent areas...');
+    const croppedBuffer = await sharp(imageBuffer)
+      .trim()
+      .png()
+      .toBuffer();
+    
+    console.log('✅ Success: AI processing + cropping completed');
+    
+    res.set({
+      'Content-Type': 'image/png',
+      'Content-Disposition': `attachment; filename="ai-processed-${Date.now()}.png"`
+    });
+    res.send(croppedBuffer);
+    
+  } catch (error) {
+    console.error('❌ Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to process image',
+      details: error.message 
+    });
+  } finally {
+    if (imagePath) await fs.unlink(imagePath).catch(() => {});
+  }
+});
+
+// Mevcut /crop endpoint'i koru (değiştirme)
 app.post('/crop', upload.single('image'), async (req, res) => {
   let imagePath;
   
@@ -406,7 +542,7 @@ app.post('/crop', upload.single('image'), async (req, res) => {
   }
 });
 
-// Sadece kırpma (trim-only) endpoint'i
+// Mevcut /trim endpoint'i koru (değiştirme)
 app.post('/trim', upload.single('image'), async (req, res) => {
   let imagePath;
   
@@ -458,5 +594,7 @@ app.post('/trim', upload.single('image'), async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Yerlikaya Auto Crop API running on port ${PORT}`);
+  console.log(`🚀 Yerlikaya Auto Crop API v3.0 running on port ${PORT}`);
+  console.log(`🤖 Rembg service: ${REMBG_URL}`);
+  console.log(`📡 Health check: http://localhost:${PORT}/`);
 });
