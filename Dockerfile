@@ -6,10 +6,13 @@ WORKDIR /app
 COPY package*.json ./
 
 # Dependencies'i kur
-RUN npm ci --only=production
+RUN npm install --production
 
 # Uygulama dosyalarını kopyala
 COPY . .
+
+# uploads klasörünü oluştur
+RUN mkdir -p uploads
 
 # Port expose et
 EXPOSE 3000
