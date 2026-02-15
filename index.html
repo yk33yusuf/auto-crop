@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Yerlikaya Auto Crop Tool v2.0</title>
+    <title>Yerlikaya Auto Crop Tool v3.0 - AI Powered</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -24,7 +24,25 @@
         h1 {
             text-align: center;
             color: #333;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
             margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .ai-badge {
+            display: inline-block;
+            background: linear-gradient(45deg, #11998e, #38ef7d);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
         }
         
         .upload-section {
@@ -61,6 +79,11 @@
             padding: 20px;
             border-radius: 10px;
         }
+
+        .control-group.ai-section {
+            background: linear-gradient(135deg, #f5fff5 0%, #e8f5e9 100%);
+            border: 2px solid #4caf50;
+        }
         
         label {
             display: block;
@@ -94,6 +117,10 @@
             cursor: pointer;
             width: 100%;
             transition: transform 0.2s;
+        }
+
+        button.ai-button {
+            background: linear-gradient(45deg, #11998e, #38ef7d);
         }
         
         button:hover:not(:disabled) {
@@ -129,6 +156,13 @@
             height: auto;
             border-radius: 8px;
             box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            background: 
+                linear-gradient(45deg, #ddd 25%, transparent 25%),
+                linear-gradient(-45deg, #ddd 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #ddd 75%),
+                linear-gradient(-45deg, transparent 75%, #ddd 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
         }
         
         .processing {
@@ -161,27 +195,39 @@
             margin-top: 10px;
         }
 
-        .api-info {
-            background: #e7f3ff;
-            border-left: 4px solid #2196F3;
-            padding: 15px;
-            margin-bottom: 20px;
-            border-radius: 0 8px 8px 0;
+        .checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
         }
 
-        .api-info h4 {
-            margin: 0 0 10px 0;
-            color: #1565C0;
+        input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
         }
 
-        .code {
-            background: #f5f5f5;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-family: monospace;
-            font-size: 14px;
+        .checkbox-wrapper label {
+            display: inline;
+            margin: 0;
+            cursor: pointer;
+            user-select: none;
         }
-        
+
+        .info-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 10px;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            border-left: 3px solid #4caf50;
+        }
+
         @media (max-width: 768px) {
             .controls, .results {
                 grid-template-columns: 1fr;
@@ -191,7 +237,8 @@
 </head>
 <body>
     <div class="container">
-        <h1>🎯 Yerlikaya Auto Crop Tool v2.0</h1>
+        <h1>🎯 Yerlikaya Auto Crop Tool v3.0 <span class="ai-badge">AI POWERED</span></h1>
+        <p class="subtitle">AI Background Removal + Smart Auto Crop</p>
 
         
         <div class="upload-section" id="uploadSection">
@@ -201,53 +248,78 @@
         </div>
         
         <div class="controls">
-            <div class="control-group">
-                <label for="threshold">🎚️ Sensitivity Threshold</label>
-                <input type="range" id="threshold" min="0" max="50" value="15" step="1">
-                <div>Değer: <span class="threshold-value" id="thresholdValue">15</span></div>
-                <small>0: En hassas (maksimum temizleme)<br>
-                       25+: Toleranslı (az temizleme)<br>
-                       Orange background için 10-20 önerilir</small>
+            <!-- AI Background Removal Section -->
+            <div class="control-group ai-section">
+                <label>🤖 AI Background Removal</label>
+                
+                <div class="checkbox-wrapper">
+                    <input type="checkbox" id="useAiRemoval" checked>
+                    <label for="useAiRemoval">
+                        Use AI-powered background removal
+                    </label>
+                </div>
+
+                <div class="info-text">
+                    ✨ <strong>Recommended:</strong> AI removes backgrounds with high accuracy using deep learning models.
+                    <br>
+                    ⚡ Processing time: 5-15 seconds
+                </div>
             </div>
-            
+
+            <!-- Processing Method Section -->
             <div class="control-group">
                 <label>🎚️ Processing Method</label>
                 <div style="margin: 10px 0;">
                     <input type="radio" id="methodStandard" name="processingMethod" value="standard" checked>
-                    <label for="methodStandard" style="display: inline; margin-left: 5px;">Standard (Free)</label>
+                    <label for="methodStandard" style="display: inline; margin-left: 5px;">Standard (Fast)</label>
                 </div>
                 <div style="margin: 10px 0;">
                     <input type="radio" id="methodPremium" name="processingMethod" value="premium">
-                    <label for="methodPremium" style="display: inline; margin-left: 5px;">Premium (Free)</label>
+                    <label for="methodPremium" style="display: inline; margin-left: 5px;">Premium (Better Quality)</label>
                 </div>
                 <div style="margin: 10px 0;">
                     <input type="radio" id="methodTrimOnly" name="processingMethod" value="trim-only">
-                    <label for="methodTrimOnly" style="display: inline; margin-left: 5px;">✂️ Trim Only (Free)</label>
+                    <label for="methodTrimOnly" style="display: inline; margin-left: 5px;">✂️ Trim Only</label>
                 </div>
-                <small>Standard: Hızlı background removal + crop<br>
-                       Premium: Canva-style edge detection + crop<br>
-                       Trim Only: Sadece kenar kırpma (arkaplan korunur)</small>
+                <small>
+                    <strong>Standard:</strong> Quick background removal + crop<br>
+                    <strong>Premium:</strong> Canva-style edge detection<br>
+                    <strong>Trim Only:</strong> Just crop (preserves background)
+                </small>
             </div>
 
+            <!-- Threshold Section (sadece Standard/Premium için) -->
+            <div class="control-group" id="thresholdSection">
+                <label for="threshold">🎚️ Sensitivity Threshold</label>
+                <input type="range" id="threshold" min="0" max="50" value="15" step="1">
+                <div>Değer: <span class="threshold-value" id="thresholdValue">15</span></div>
+                <small>
+                    <strong>0:</strong> Most sensitive (max cleanup)<br>
+                    <strong>15:</strong> Balanced (recommended)<br>
+                    <strong>25+:</strong> Tolerant (minimal cleanup)
+                </small>
+            </div>
         </div>
         
-        <button id="processBtn" disabled>🚀 İşleme Başla</button>
+        <button id="processBtn" class="ai-button" disabled>
+            🚀 Process with AI
+        </button>
         
         <div id="processing" class="processing" style="display: none;">
-            <div>⏳ İşleniyor... Lütfen bekleyin</div>
-            <div style="margin-top: 10px;">Bu işlem 10-30 saniye sürebilir.</div>
+            <div>⏳ Processing... Please wait</div>
+            <div style="margin-top: 10px;">This may take 10-30 seconds.</div>
         </div>
         
         <div id="results" class="results" style="display: none;">
             <div class="result-item">
-                <h3>📷 Orijinal Resim</h3>
+                <h3>📷 Original Image</h3>
                 <img id="originalImg" src="" alt="Original">
             </div>
             <div class="result-item">
-                <h3>✨ İşlenmiş Resim</h3>
+                <h3>✨ Processed Image</h3>
                 <img id="processedImg" src="" alt="Processed">
                 <button id="downloadBtn" class="download-btn" style="display: none;">
-                    💾 İndir
+                    💾 Download
                 </button>
             </div>
         </div>
@@ -268,6 +340,8 @@
         const originalImg = document.getElementById('originalImg');
         const processedImg = document.getElementById('processedImg');
         const downloadBtn = document.getElementById('downloadBtn');
+        const useAiRemoval = document.getElementById('useAiRemoval');
+        const thresholdSection = document.getElementById('thresholdSection');
         
         let selectedFile = null;
         let processedBlob = null;
@@ -277,16 +351,50 @@
         
         // Sayfa yüklendiğinde
         document.addEventListener('DOMContentLoaded', function() {
-            // Başlangıç threshold değerini göster
             thresholdValue.textContent = thresholdSlider.value;
-            
             console.log('🚀 Page loaded, API URL:', API_URL);
+            checkApiStatus();
         });
+        
+        // AI checkbox change
+        useAiRemoval.addEventListener('change', function() {
+            updateButtonText();
+        });
+
+        // Method change
+        document.querySelectorAll('input[name="processingMethod"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                // Trim-only seçildiğinde threshold'u gizle
+                if (this.value === 'trim-only') {
+                    thresholdSection.style.opacity = '0.5';
+                    thresholdSlider.disabled = true;
+                } else {
+                    thresholdSection.style.opacity = '1';
+                    thresholdSlider.disabled = false;
+                }
+                updateButtonText();
+            });
+        });
+
+        function updateButtonText() {
+            const useAi = useAiRemoval.checked;
+            const method = document.querySelector('input[name="processingMethod"]:checked').value;
+            
+            if (useAi) {
+                processBtn.textContent = '🤖 Process with AI';
+                processBtn.className = 'ai-button';
+            } else if (method === 'trim-only') {
+                processBtn.textContent = '✂️ Trim Only';
+                processBtn.className = '';
+            } else {
+                processBtn.textContent = '🚀 Process (Classic Method)';
+                processBtn.className = '';
+            }
+        }
         
         // Threshold slider değişimi
         thresholdSlider.addEventListener('input', function(e) {
             thresholdValue.textContent = e.target.value;
-            console.log('📊 Threshold changed to:', e.target.value);
         });
         
         // Dosya seçimi
@@ -346,17 +454,15 @@
                 };
                 reader.readAsDataURL(file);
                 
-                showMessage(`✅ Dosya seçildi: ${file.name}`, 'success');
+                showMessage(`✅ File selected: ${file.name}`, 'success');
             } else {
-                showMessage('❌ Lütfen geçerli bir resim dosyası seçin', 'error');
+                showMessage('❌ Please select a valid image file', 'error');
             }
         }
         
-        // Method change handling - API key section removed
-        
         async function processImage() {
             if (!selectedFile) {
-                showMessage('❌ Önce bir dosya seçin', 'error');
+                showMessage('❌ Please select a file first', 'error');
                 return;
             }
             
@@ -368,7 +474,7 @@
                 results.style.display = 'none';
                 errorDiv.style.display = 'none';
                 
-                // Method seçimini al
+                const useAi = useAiRemoval.checked;
                 const methodRadios = document.getElementsByName('processingMethod');
                 let selectedMethod = 'standard';
                 for (const radio of methodRadios) {
@@ -380,19 +486,24 @@
                 
                 const formData = new FormData();
                 formData.append('image', selectedFile);
-                formData.append('threshold', thresholdSlider.value);
                 
                 let endpoint = '/crop';
                 
-                if (selectedMethod === 'trim-only') {
+                // AI kullanılıyorsa /process endpoint'ini kullan
+                if (useAi) {
+                    endpoint = '/process';
+                    formData.append('remove_bg', 'true');
+                } else if (selectedMethod === 'trim-only') {
                     endpoint = '/trim';
-                    // Sadece threshold gönder, quality parametresi yok
+                    formData.append('threshold', thresholdSlider.value);
                 } else {
+                    endpoint = '/crop';
+                    formData.append('threshold', thresholdSlider.value);
                     formData.append('quality', selectedMethod);
                 }
                 
                 console.log('📤 Sending request to:', `${API_URL}${endpoint}`);
-                console.log('📊 Threshold:', thresholdSlider.value);
+                console.log('🤖 AI enabled:', useAi);
                 console.log('🎨 Method:', selectedMethod);
                 
                 const response = await fetch(`${API_URL}${endpoint}`, {
@@ -407,9 +518,8 @@
                     try {
                         const errorData = await response.json();
                         errorMsg = errorData.error || errorMsg;
-                        
-                        if (errorData.info) {
-                            errorMsg += ` - ${errorData.info}`;
+                        if (errorData.details) {
+                            errorMsg += ` - ${errorData.details}`;
                         }
                     } catch(e) {
                         console.log('Could not parse error JSON');
@@ -426,18 +536,19 @@
                 processing.style.display = 'none';
                 results.style.display = 'grid';
                 
-                let methodText = 'Standard';
-                if (selectedMethod === 'premium') methodText = 'Premium';
-                else if (selectedMethod === 'trim-only') methodText = '✂️ Trim Only';
+                let methodText = useAi ? '🤖 AI-Powered' : 
+                               selectedMethod === 'premium' ? 'Premium' :
+                               selectedMethod === 'trim-only' ? '✂️ Trim Only' : 
+                               'Standard';
                 
-                showMessage(`✅ İşlem başarıyla tamamlandı! Method: ${methodText}`, 'success');
+                showMessage(`✅ Processing completed! Method: ${methodText}`, 'success');
                 
                 console.log('✅ Processing completed successfully');
                 
             } catch (error) {
                 console.error('❌ Processing error:', error);
                 processing.style.display = 'none';
-                showMessage(`❌ Hata: ${error.message}`, 'error');
+                showMessage(`❌ Error: ${error.message}`, 'error');
             } finally {
                 processBtn.disabled = false;
             }
@@ -446,7 +557,7 @@
         function downloadImage() {
             if (!processedBlob) return;
             
-            // Method'u kontrol et
+            const useAi = useAiRemoval.checked;
             const methodRadios = document.getElementsByName('processingMethod');
             let selectedMethod = 'standard';
             for (const radio of methodRadios) {
@@ -461,16 +572,19 @@
             a.href = url;
             
             const timestamp = Date.now();
-            const methodPrefix = selectedMethod === 'premium' ? 'premium' :
-                               selectedMethod === 'trim-only' ? 'trimmed' : 'standard';
-            a.download = `yerlikaya-${methodPrefix}-${timestamp}.png`;
+            const prefix = useAi ? 'ai-processed' :
+                          selectedMethod === 'premium' ? 'premium' :
+                          selectedMethod === 'trim-only' ? 'trimmed' : 
+                          'standard';
+            
+            a.download = `yerlikaya-${prefix}-${timestamp}.png`;
             
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             
-            console.log('💾 Image downloaded as', `${methodPrefix} PNG`);
+            console.log('💾 Image downloaded as', `${prefix} PNG`);
         }
         
         function showMessage(message, type) {
@@ -486,20 +600,25 @@
         }
         
         // API durumu kontrol et
-        window.addEventListener('load', async function() {
+        async function checkApiStatus() {
             try {
                 const response = await fetch(`${API_URL}/`);
                 if (response.ok) {
                     const data = await response.json();
                     console.log('🚀 API Status:', data);
+                    if (data.rembgStatus) {
+                        console.log('🤖 Rembg URL:', data.rembgStatus);
+                    }
                 } else {
                     console.warn('⚠️ API response not OK:', response.status);
                 }
             } catch (error) {
                 console.warn('⚠️ API connection issue:', error.message);
-                showMessage('⚠️ API bağlantısı kontrol ediliyor...', 'error');
+                showMessage('⚠️ Checking API connection...', 'error');
             }
-        });
+        }
+        
+        window.addEventListener('load', checkApiStatus);
     </script>
 </body>
 </html>
