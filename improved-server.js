@@ -575,6 +575,83 @@ async function removeColorBackgroundSmart(imageBuffer, targetColor = null, thres
   }
 }
 
+async function removeColorWithDespill(imageBuffer, targetColor, threshold = 30) {
+  const image = sharp(imageBuffer);
+  let { data, info } = await image.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  
+  if (!targetColor) {
+    targetColor = { r: data[0], g: data[1], b: data[2] };
+  }
+  
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    
+    const colorDiff = Math.sqrt(
+      Math.pow(r - targetColor.r, 2) +
+      Math.pow(g - targetColor.g, 2) +
+      Math.pow(b - targetColor.b, 2)
+    );
+    
+    if (colorDiff <= threshold) {
+      // Tamamen sil
+      data[i + 3] = 0;
+    } else if (colorDiff <= threshold * 2) {
+      // DESPILL: Kenar pixel - arkaplan rengini azalt
+      const spillAmount = 1 - (colorDiff / (threshold * 2));
+      
+      // Arkaplan renginin katkısını çıkar
+      data[i] = Math.max(0, r - (targetColor.r * spillAmount * 0.5));
+      data[i + 1] = Math.max(0, g - (targetColor.g * spillAmount * 0.5));
+      data[i + 2] = Math.max(0, b - (targetColor.b * spillAmount * 0.5));
+      
+      // Alpha'yı koruyucu azalt
+      data[i + 3] = Math.round(255 * (1 - spillAmount * 0.3));
+    }
+  }
+  
+  return sharp(data, {
+    raw: { width: info.width, height: info.height, channels: 4 }
+  }).png().toBuffer();
+}
+
+async function removeColorWithMorphology(imageBuffer, targetColor, threshold = 30) {
+  // ... normal color removal ...
+  
+  // Erode (1-2 pixel içe çek)
+  const eroded = await sharp(processedBuffer)
+    .convolve({
+      width: 3,
+      height: 3,
+      kernel: [0, 1, 0, 1, 1, 1, 0, 1, 0]
+    })
+    .toBuffer();
+  
+  // Dilate (geri genişlet)
+  const final = await sharp(eroded)
+    .convolve({
+      width: 3,
+      height: 3,
+      kernel: [1, 1, 1, 1, 1, 1, 1, 1, 1]
+    })
+    .toBuffer();
+  
+  return final;
+}
+
+
+async function removeColorWithFeather(imageBuffer, targetColor, threshold = 30) {
+  // ... normal color removal ...
+  
+  // Alpha channel'ı hafifçe blur yap
+  const feathered = await sharp(processedBuffer)
+    .blur(0.5) // Çok hafif blur
+    .toBuffer();
+  
+  return feathered;
+}
+
 
 
 // /process endpoint (BASİTLEŞTİRİLMİŞ - OCR yok)
@@ -617,7 +694,7 @@ app.post('/process', upload.single('image'), async (req, res) => {
         }
         
         const threshold = parseInt(req.body.threshold) || 30;
-        imageBuffer = await removeColorBackgroundSmart(imageBuffer, targetColor, threshold);
+        imageBuffer = await removeColorWithDespill(imageBuffer, targetColor, threshold);
       }
     }
     
