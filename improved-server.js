@@ -694,7 +694,7 @@ app.post('/process', upload.single('image'), async (req, res) => {
         }
         
         const threshold = parseInt(req.body.threshold) || 30;
-        imageBuffer = await removeColorWithDespill(imageBuffer, targetColor, threshold);
+        imageBuffer = await removeColorWithMorphology(imageBuffer, targetColor, threshold);
       }
     }
     
