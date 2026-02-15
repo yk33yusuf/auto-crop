@@ -369,7 +369,52 @@ app.post('/remove-bg', upload.single('image'), async (req, res) => {
   }
 });
 
-// 🆕 YENİ ENDPOINT: AI Background Removal + Auto Crop
+
+
+
+
+
+
+// Yazıları temiz görüntüye ekle
+async function overlayText(imageBuffer, textData) {
+    const image = sharp(imageBuffer);
+    const metadata = await image.metadata();
+    
+    // SVG ile yazıları çiz
+    const svgTexts = textData.map(word => {
+        const { bbox, text } = word;
+        return `
+            <text 
+                x="${bbox.x0}" 
+                y="${bbox.y0 + bbox.y1 / 2}" 
+                font-size="${bbox.y1 - bbox.y0}"
+                fill="black"
+                font-family="Arial"
+            >${text}</text>
+        `;
+    }).join('');
+    
+    const svg = `
+        <svg width="${metadata.width}" height="${metadata.height}">
+            ${svgTexts}
+        </svg>
+    `;
+    
+    return image
+        .composite([{
+            input: Buffer.from(svg),
+            top: 0,
+            left: 0
+        }])
+        .toBuffer();
+}
+
+
+
+
+
+
+// 🆕 YENİ ENDPOINT: AI Background Removal + OCR Text Preservation + Auto Crop
 app.post('/process', upload.single('image'), async (req, res) => {
   let imagePath;
   
@@ -382,28 +427,49 @@ app.post('/process', upload.single('image'), async (req, res) => {
     
     imagePath = imageFile.path;
     const removeBg = req.body.remove_bg !== 'false'; // Default true
+    const preserveText = req.body.preserve_text !== 'false'; // Default true
     
     console.log('🚀 Starting AI-powered processing...');
     console.log('🎯 Remove background:', removeBg);
+    console.log('📝 Preserve text:', preserveText);
+    
+    let textData = [];
+    
+    // Step 1: OCR - Detect text BEFORE removing background
+    if (removeBg && preserveText) {
+      console.log('📖 Step 1: Detecting text in original image...');
+      textData = await detectText(imagePath);
+    } else {
+      console.log('⏭️ Step 1: Skipping text detection...');
+    }
     
     let imageBuffer = await fs.readFile(imagePath);
     
-    // Step 1: AI Background Removal (opsiyonel)
+    // Step 2: AI Background Removal
     if (removeBg) {
-      console.log('🤖 Step 1: AI background removal...');
+      console.log('🤖 Step 2: AI background removal...');
       imageBuffer = await removeBackgroundWithRembg(imageBuffer);
     } else {
-      console.log('⏭️ Step 1: Skipping background removal...');
+      console.log('⏭️ Step 2: Skipping background removal...');
     }
     
-    // Step 2: Auto Crop
-    console.log('✂️ Step 2: Auto cropping transparent areas...');
+    // Step 3: Overlay text back (if detected)
+    if (removeBg && preserveText && textData.length > 0) {
+      console.log('✏️ Step 3: Restoring text overlay...');
+      imageBuffer = await overlayText(imageBuffer, textData);
+    } else {
+      console.log('⏭️ Step 3: No text to restore...');
+    }
+    
+    // Step 4: Auto Crop
+    console.log('✂️ Step 4: Auto cropping transparent areas...');
     const croppedBuffer = await sharp(imageBuffer)
       .trim()
       .png()
       .toBuffer();
     
-    console.log('✅ Success: AI processing + cropping completed');
+    console.log('✅ Success: AI processing completed');
+    console.log(`📊 Steps: OCR=${textData.length > 0 ? '✓' : '✗'} | BG Removal=${removeBg ? '✓' : '✗'} | Text Overlay=${textData.length} words | Crop=✓`);
     
     res.set({
       'Content-Type': 'image/png',
@@ -541,6 +607,36 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     if (imagePath) await fs.unlink(imagePath).catch(() => {});
   }
 });
+
+
+const Tesseract = require('tesseract.js');
+
+// OCR ile yazıları tespit et
+async function detectText(imagePath) {
+    try {
+        const { data: { words } } = await Tesseract.recognize(
+            imagePath,
+            'eng',
+            { 
+                logger: m => console.log('📖 OCR:', m.status) 
+            }
+        );
+        
+        return words.filter(w => w.confidence > 60); // Güvenilir yazılar
+    } catch (error) {
+        console.error('❌ OCR error:', error);
+        return [];
+    }
+}
+
+
+
+
+
+
+
+
+
 
 // Mevcut /trim endpoint'i koru (değiştirme)
 app.post('/trim', upload.single('image'), async (req, res) => {
