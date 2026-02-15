@@ -2,6 +2,12 @@ FROM node:18-alpine
 
 WORKDIR /app
 
+# Font desteği ekle
+RUN apk add --no-cache \
+    fontconfig \
+    ttf-dejavu \
+    font-noto
+
 # Package files'ı kopyala
 COPY package*.json ./
 
