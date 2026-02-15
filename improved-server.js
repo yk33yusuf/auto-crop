@@ -331,6 +331,12 @@ app.get('/', (req, res) => {
   });
 });
 
+
+
+
+
+
+
 // 🆕 YENİ ENDPOINT: Sadece Background Removal
 app.post('/remove-bg', upload.single('image'), async (req, res) => {
   let imagePath;
@@ -411,10 +417,76 @@ async function overlayText(imageBuffer, textData) {
 
 
 
+// Belirli rengi transparent yap
+async function removeColorBackground(imageBuffer, targetColor = null, threshold = 30) {
+  try {
+    console.log('🎨 Color-based background removal...');
+    
+    const image = sharp(imageBuffer);
+    const metadata = await image.metadata();
+    
+    // PNG'ye çevir (alpha channel için)
+    let { data, info } = await image
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    
+    // Auto-detect: En çok kullanılan köşe rengini bul
+    if (!targetColor) {
+      const corners = [
+        { r: data[0], g: data[1], b: data[2] }, // Sol üst
+        { r: data[info.width * 4 - 4], g: data[info.width * 4 - 3], b: data[info.width * 4 - 2] }, // Sağ üst
+        { r: data[data.length - info.width * 4], g: data[data.length - info.width * 4 + 1], b: data[data.length - info.width * 4 + 2] }, // Sol alt
+        { r: data[data.length - 4], g: data[data.length - 3], b: data[data.length - 2] } // Sağ alt
+      ];
+      
+      // İlk köşe rengini hedef al (genelde arkaplan)
+      targetColor = corners[0];
+      console.log(`🎯 Auto-detected background color: RGB(${targetColor.r}, ${targetColor.g}, ${targetColor.b})`);
+    }
+    
+    // Her pixel'i kontrol et
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      
+      // Renk farkını hesapla (Euclidean distance)
+      const colorDiff = Math.sqrt(
+        Math.pow(r - targetColor.r, 2) +
+        Math.pow(g - targetColor.g, 2) +
+        Math.pow(b - targetColor.b, 2)
+      );
+      
+      // Threshold içindeyse transparent yap
+      if (colorDiff <= threshold) {
+        data[i + 3] = 0; // Alpha = 0 (transparent)
+      }
+    }
+    
+    // Sharp buffer'a geri çevir
+    const result = await sharp(data, {
+      raw: {
+        width: info.width,
+        height: info.height,
+        channels: 4
+      }
+    })
+    .png()
+    .toBuffer();
+    
+    console.log('✅ Color removal completed');
+    return result;
+    
+  } catch (error) {
+    console.error('❌ Color removal error:', error);
+    throw error;
+  }
+}
 
 
 
-// 🆕 YENİ ENDPOINT: AI Background Removal + OCR Text Preservation + Auto Crop
+
 app.post('/process', upload.single('image'), async (req, res) => {
   let imagePath;
   
@@ -426,54 +498,51 @@ app.post('/process', upload.single('image'), async (req, res) => {
     }
     
     imagePath = imageFile.path;
-    const removeBg = req.body.remove_bg !== 'false'; // Default true
-    const preserveText = req.body.preserve_text !== 'false'; // Default true
+    const removeBg = req.body.remove_bg !== 'false';
+    const method = req.body.method || 'color'; // 'color' veya 'ai'
     
-    console.log('🚀 Starting AI-powered processing...');
+    console.log('🚀 Starting processing...');
     console.log('🎯 Remove background:', removeBg);
-    console.log('📝 Preserve text:', preserveText);
-    
-    let textData = [];
-    
-    // Step 1: OCR - Detect text BEFORE removing background
-    if (removeBg && preserveText) {
-      console.log('📖 Step 1: Detecting text in original image...');
-      textData = await detectText(imagePath);
-    } else {
-      console.log('⏭️ Step 1: Skipping text detection...');
-    }
+    console.log('🎨 Method:', method);
     
     let imageBuffer = await fs.readFile(imagePath);
     
-    // Step 2: AI Background Removal
+    // Background Removal
     if (removeBg) {
-      console.log('🤖 Step 2: AI background removal...');
-      imageBuffer = await removeBackgroundWithRembg(imageBuffer);
-    } else {
-      console.log('⏭️ Step 2: Skipping background removal...');
+      if (method === 'ai') {
+        console.log('🤖 AI background removal (Rembg)...');
+        imageBuffer = await removeBackgroundWithRembg(imageBuffer);
+      } else {
+        console.log('🎨 Color-based background removal...');
+        // Hedef renk (opsiyonel)
+        let targetColor = null;
+        if (req.body.bg_color) {
+          // Hex to RGB: #7ECCC4 → {r: 126, g: 204, b: 196}
+          const hex = req.body.bg_color.replace('#', '');
+          targetColor = {
+            r: parseInt(hex.substr(0, 2), 16),
+            g: parseInt(hex.substr(2, 2), 16),
+            b: parseInt(hex.substr(4, 2), 16)
+          };
+        }
+        
+        const threshold = parseInt(req.body.threshold) || 30;
+        imageBuffer = await removeColorBackground(imageBuffer, targetColor, threshold);
+      }
     }
     
-    // Step 3: Overlay text back (if detected)
-    if (removeBg && preserveText && textData.length > 0) {
-      console.log('✏️ Step 3: Restoring text overlay...');
-      imageBuffer = await overlayText(imageBuffer, textData);
-    } else {
-      console.log('⏭️ Step 3: No text to restore...');
-    }
-    
-    // Step 4: Auto Crop
-    console.log('✂️ Step 4: Auto cropping transparent areas...');
+    // Auto Crop
+    console.log('✂️ Auto cropping transparent areas...');
     const croppedBuffer = await sharp(imageBuffer)
       .trim()
       .png()
       .toBuffer();
     
-    console.log('✅ Success: AI processing completed');
-    console.log(`📊 Steps: OCR=${textData.length > 0 ? '✓' : '✗'} | BG Removal=${removeBg ? '✓' : '✗'} | Text Overlay=${textData.length} words | Crop=✓`);
+    console.log('✅ Success: Processing completed');
     
     res.set({
       'Content-Type': 'image/png',
-      'Content-Disposition': `attachment; filename="ai-processed-${Date.now()}.png"`
+      'Content-Disposition': `attachment; filename="processed-${Date.now()}.png"`
     });
     res.send(croppedBuffer);
     
