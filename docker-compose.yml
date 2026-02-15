@@ -11,14 +11,19 @@ services:
     depends_on:
       - rembg
     restart: unless-stopped
+    networks:
+      - rembg-network
 
   rembg:
     image: danielgatis/rembg:latest
     command: s --host 0.0.0.0 --port 7000 --log_level info
-    ports:
-      - "7000:7000"  # ← BU SATIR KRİTİK
+    # Port'u EXPOSE et (internal network için)
+    expose:
+      - "7000"
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 2G
+    networks:
+      - rembg-network
+
+networks:
+  rembg-network:
+    driver: bridge
