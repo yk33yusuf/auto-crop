@@ -290,7 +290,7 @@
 <body>
     <div class="container">
         <h1>🎯 Yerlikaya Auto Crop Tool</h1>
-        <div class="version-badge"><span>v3.1 — Flood-Fill + CIE Lab + Smart Post-Processing</span></div>
+        <div class="version-badge"><span>v3.2 — Flood-Fill + Island Removal + Text Preservation</span></div>
         
         <div class="upload-section" id="uploadSection">
             <h3>📁 Resim Yükle</h3>
@@ -312,16 +312,19 @@
                     <h4>⚙️ Processing Method</h4>
                     <div class="method-option">
                         <input type="radio" id="methodStandard" name="processingMethod" value="standard" checked>
-                        <label for="methodStandard">Standard — CIE Lab removal</label>
-                    </div>
-                    <div class="method-option">
-                        <input type="radio" id="methodPremium" name="processingMethod" value="premium">
-                        <label for="methodPremium">Premium — Edge-aware + CIE Lab</label>
+                        <label for="methodStandard">Standard — Flood-Fill + Island Removal</label>
                     </div>
                     <div class="method-option">
                         <input type="radio" id="methodTrimOnly" name="processingMethod" value="trim-only">
                         <label for="methodTrimOnly">✂️ Trim Only — Sadece kırpma</label>
                     </div>
+                </div>
+                
+                <div class="control-group" style="margin-top: 16px;">
+                    <h4>🏝️ Interior Island Detection</h4>
+                    <label style="font-size: 12px;">Min Island Size: <span class="value-badge" id="islandValue">100</span> px</label>
+                    <input type="range" id="minIsland" min="20" max="1000" value="100" step="10">
+                    <small>Tasarım içindeki bg adalarını kaldırır. Düşük = daha agresif, Yüksek = sadece büyük alanlar</small>
                 </div>
             </div>
             
@@ -419,6 +422,10 @@
         thresholdSlider.addEventListener('input', e => thresholdValue.textContent = e.target.value);
         erosionRadius.addEventListener('input', e => erosionValue.textContent = e.target.value);
         
+        const minIslandSlider = document.getElementById('minIsland');
+        const islandValue = document.getElementById('islandValue');
+        minIslandSlider.addEventListener('input', e => islandValue.textContent = e.target.value);
+        
         // Toggle erosion slider visibility
         document.getElementById('toggleErosion').addEventListener('change', function() {
             erosionSliderRow.style.display = this.checked ? 'block' : 'none';
@@ -488,13 +495,12 @@
                 if (selectedMethod === 'trim-only') {
                     endpoint = '/trim';
                 } else {
-                    formData.append('quality', selectedMethod);
-                    
                     // Post-processing params
                     const erosionOn = document.getElementById('toggleErosion').checked;
                     formData.append('erosion', erosionOn ? erosionRadius.value : '0');
                     formData.append('decontaminate', document.getElementById('toggleDecontaminate').checked ? 'true' : 'false');
                     formData.append('softenEdges', document.getElementById('toggleSoften').checked ? 'true' : 'false');
+                    formData.append('minIsland', minIslandSlider.value);
                 }
                 
                 console.log('🚀 Processing:', selectedMethod, 'threshold:', thresholdSlider.value);
@@ -519,7 +525,7 @@
                 processing.style.display = 'none';
                 results.style.display = 'grid';
                 
-                const methodNames = { standard: 'Standard V3', premium: 'Premium V3', 'trim-only': 'Trim Only' };
+                const methodNames = { standard: 'Standard V3.2', 'trim-only': 'Trim Only' };
                 showMessage(`✅ Tamamlandı — ${methodNames[selectedMethod]}`, 'success');
                 
             } catch (error) {
