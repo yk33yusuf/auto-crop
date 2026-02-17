@@ -10,7 +10,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('.'));
 
-// Timeout (3 min)
 app.use((req, res, next) => {
   req.setTimeout(180000);
   res.setTimeout(180000);
@@ -60,7 +59,6 @@ function rgbToLab(r, g, b) {
   return xyzToLab(xyz.x, xyz.y, xyz.z);
 }
 
-// On-demand Lab cache
 const labCache = new Map();
 
 function rgbToLabCached(r, g, b) {
@@ -146,70 +144,54 @@ function detectBackgroundColor(data, width, height, channels) {
 }
 
 // ============================================
-// FLOOD-FILL BACKGROUND REMOVAL
+// FLOOD-FILL + INTERIOR ISLAND REMOVAL
 // ============================================
 
+const dx8 = [-1, 1, 0, 0, -1, -1, 1, 1];
+const dy8 = [0, 0, -1, 1, -1, 1, -1, 1];
+
 /**
- * Flood-fill based background removal
- * 
- * Mantık:
- * 1. Resmin kenarlarından (4 kenar) başla
- * 2. Arka plan rengine benzer pikselleri BFS ile tara
- * 3. Sadece BAĞLANTILI (connected) arka plan piksellerini kaldır
- * 4. Tasarım içindeki koyu renklere DOKUNMA
- * 
- * Bu sayede "Anyone Can Cook!" yazısı gibi elementler korunur
- * çünkü siyah arka plana doğrudan bağlantıları yok
+ * Phase 1: Flood-fill from edges
+ * Phase 2: Interior island scan — find bg-colored regions not reached by flood-fill
+ * Phase 3: Transition zone refinement — promote transition pixels with foreground majority
  */
-function floodFillBackgroundRemoval(data, width, height, channels, bgColor, threshold) {
+function advancedBackgroundRemoval(data, width, height, channels, bgColor, threshold, minIslandSize) {
   const result = Buffer.from(data);
   const bgLab = rgbToLab(bgColor.r, bgColor.g, bgColor.b);
+  const totalPixels = width * height;
   
-  // Lab threshold (UI threshold → Delta E)
   const labThreshold = Math.max(threshold * 0.8, 2);
+  const transitionThreshold = labThreshold * 1.3; // Tighter transition zone (was 1.5)
   
-  // Transition zone for soft edges
-  const transitionMultiplier = 1.5;
-  const transitionThreshold = labThreshold * transitionMultiplier;
+  console.log(`🌊 labThreshold=${labThreshold.toFixed(1)}, transition=${transitionThreshold.toFixed(1)}`);
   
-  console.log(`🌊 Flood-fill: labThreshold=${labThreshold.toFixed(1)}, transition=${transitionThreshold.toFixed(1)}`);
+  // Mask: 0=unvisited, 1=background, 2=transition, 3=foreground
+  const mask = new Uint8Array(totalPixels);
   
-  // Mask: 0=unvisited, 1=background, 2=transition(semi-transparent), 3=foreground
-  const mask = new Uint8Array(width * height);
+  // Pre-compute deltaE for all pixels (avoids recomputation)
+  const deltaEMap = new Float32Array(totalPixels);
+  for (let i = 0; i < totalPixels; i++) {
+    const offset = i * channels;
+    deltaEMap[i] = deltaE76Fast(data[offset], data[offset + 1], data[offset + 2], bgLab);
+  }
   
-  // BFS queue
-  const queueX = new Int32Array(width * height);
-  const queueY = new Int32Array(width * height);
-  let queueHead = 0;
-  let queueTail = 0;
+  // ========== PHASE 1: Edge flood-fill ==========
+  const queue = new Int32Array(totalPixels);
+  let qHead = 0, qTail = 0;
   
-  // Seed from all 4 edges
   function seedEdge(x, y) {
     const idx = y * width + x;
     if (mask[idx] !== 0) return;
     
-    const offset = idx * channels;
-    const r = data[offset];
-    const g = data[offset + 1];
-    const b = data[offset + 2];
-    
-    const dE = deltaE76Fast(r, g, b, bgLab);
-    
-    if (dE <= labThreshold) {
-      mask[idx] = 1; // background
-      queueX[queueTail] = x;
-      queueY[queueTail] = y;
-      queueTail++;
-    } else if (dE <= transitionThreshold) {
-      mask[idx] = 2; // transition zone
-      // Transition pikselleri de queue'ya ekle ama sadece bg komşusu varsa yayılsın
-      queueX[queueTail] = x;
-      queueY[queueTail] = y;
-      queueTail++;
+    if (deltaEMap[idx] <= labThreshold) {
+      mask[idx] = 1;
+      queue[qTail++] = idx;
+    } else if (deltaEMap[idx] <= transitionThreshold) {
+      mask[idx] = 2;
+      // Don't add to queue — transition doesn't spread
     }
   }
   
-  // Seed all edges
   for (let x = 0; x < width; x++) {
     seedEdge(x, 0);
     seedEdge(x, height - 1);
@@ -219,109 +201,199 @@ function floodFillBackgroundRemoval(data, width, height, channels, bgColor, thre
     seedEdge(width - 1, y);
   }
   
-  // BFS - 8-directional
-  const dx = [-1, 1, 0, 0, -1, -1, 1, 1];
-  const dy = [0, 0, -1, 1, -1, 1, -1, 1];
-  
-  let processedCount = 0;
-  
-  while (queueHead < queueTail) {
-    const cx = queueX[queueHead];
-    const cy = queueY[queueHead];
-    const currentMask = mask[cy * width + cx];
-    queueHead++;
-    processedCount++;
+  // BFS — only background (mask=1) spreads
+  while (qHead < qTail) {
+    const cidx = queue[qHead++];
+    const cx = cidx % width;
+    const cy = (cidx - cx) / width;
     
-    // Transition pikselleri yayılmaz (sadece background yayılır)
-    if (currentMask === 2) continue;
-    
-    // Check all 8 neighbors
     for (let d = 0; d < 8; d++) {
-      const nx = cx + dx[d];
-      const ny = cy + dy[d];
-      
+      const nx = cx + dx8[d];
+      const ny = cy + dy8[d];
       if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
       
       const nIdx = ny * width + nx;
       if (mask[nIdx] !== 0) continue;
       
-      const nOffset = nIdx * channels;
-      const r = data[nOffset];
-      const g = data[nOffset + 1];
-      const b = data[nOffset + 2];
-      
-      const dE = deltaE76Fast(r, g, b, bgLab);
+      const dE = deltaEMap[nIdx];
       
       if (dE <= labThreshold) {
-        mask[nIdx] = 1; // background - continue spreading
-        queueX[queueTail] = nx;
-        queueY[queueTail] = ny;
-        queueTail++;
+        mask[nIdx] = 1;
+        queue[qTail++] = nIdx;
       } else if (dE <= transitionThreshold) {
-        mask[nIdx] = 2; // transition - mark but don't spread
+        mask[nIdx] = 2;
       } else {
-        mask[nIdx] = 3; // foreground
+        mask[nIdx] = 3;
       }
     }
   }
   
-  // Mark all unvisited pixels as foreground
-  for (let i = 0; i < width * height; i++) {
+  // Mark unvisited as foreground
+  for (let i = 0; i < totalPixels; i++) {
     if (mask[i] === 0) mask[i] = 3;
   }
   
-  // Apply mask to alpha channel
-  let bgRemoved = 0;
-  let transitioned = 0;
+  let bgCount = 0, transCount = 0, fgCount = 0;
+  for (let i = 0; i < totalPixels; i++) {
+    if (mask[i] === 1) bgCount++;
+    else if (mask[i] === 2) transCount++;
+    else fgCount++;
+  }
+  console.log(`🌊 Phase 1 (edge flood): bg=${bgCount}, transition=${transCount}, fg=${fgCount}`);
   
-  for (let i = 0; i < width * height; i++) {
+  // ========== PHASE 2: Interior island removal ==========
+  // Find connected regions of unvisited bg-colored pixels (mask=3 but deltaE <= labThreshold)
+  // If region is larger than minIslandSize, it's an interior bg island → remove it
+  
+  const visited2 = new Uint8Array(totalPixels); // separate visited tracker
+  let islandsFound = 0;
+  let islandPixelsRemoved = 0;
+  
+  for (let i = 0; i < totalPixels; i++) {
+    // Only check foreground pixels that look like background color
+    if (mask[i] !== 3 || visited2[i] || deltaEMap[i] > labThreshold) continue;
+    
+    // BFS to find connected region of bg-colored foreground pixels
+    const regionPixels = [];
+    const rQueue = [i];
+    visited2[i] = 1;
+    let rHead = 0;
+    
+    while (rHead < rQueue.length) {
+      const cidx = rQueue[rHead++];
+      regionPixels.push(cidx);
+      
+      const cx = cidx % width;
+      const cy = (cidx - cx) / width;
+      
+      for (let d = 0; d < 8; d++) {
+        const nx = cx + dx8[d];
+        const ny = cy + dy8[d];
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+        
+        const nIdx = ny * width + nx;
+        if (visited2[nIdx] || mask[nIdx] !== 3) continue;
+        if (deltaEMap[nIdx] > labThreshold) continue;
+        
+        visited2[nIdx] = 1;
+        rQueue.push(nIdx);
+      }
+    }
+    
+    // If region is large enough, it's a background island
+    if (regionPixels.length >= minIslandSize) {
+      islandsFound++;
+      for (const idx of regionPixels) {
+        mask[idx] = 1; // Mark as background
+        islandPixelsRemoved += 1;
+      }
+      
+      // Also mark transition zone around this island
+      for (const idx of regionPixels) {
+        const cx = idx % width;
+        const cy = (idx - cx) / width;
+        
+        for (let d = 0; d < 8; d++) {
+          const nx = cx + dx8[d];
+          const ny = cy + dy8[d];
+          if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+          
+          const nIdx = ny * width + nx;
+          if (mask[nIdx] !== 3) continue;
+          if (deltaEMap[nIdx] <= transitionThreshold) {
+            mask[nIdx] = 2; // transition
+          }
+        }
+      }
+    }
+  }
+  
+  console.log(`🏝️ Phase 2 (islands): found ${islandsFound} islands, removed ${islandPixelsRemoved} pixels`);
+  
+  // ========== PHASE 3: Transition zone refinement ==========
+  // If a transition pixel has majority foreground (mask=3) neighbors → promote to foreground
+  // This preserves text edges like "Anyone Can Cook!"
+  
+  let promoted = 0;
+  let demoted = 0;
+  
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const idx = y * width + x;
+      if (mask[idx] !== 2) continue;
+      
+      let fgNeighbors = 0;
+      let bgNeighbors = 0;
+      let totalNeighbors = 0;
+      
+      for (let d = 0; d < 8; d++) {
+        const nx = x + dx8[d];
+        const ny = y + dy8[d];
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+        
+        const nMask = mask[ny * width + nx];
+        totalNeighbors++;
+        if (nMask === 3) fgNeighbors++;
+        else if (nMask === 1) bgNeighbors++;
+      }
+      
+      // Majority foreground → promote to foreground (preserve text edges)
+      if (fgNeighbors > bgNeighbors && fgNeighbors >= 3) {
+        mask[idx] = 3;
+        promoted++;
+      }
+      // Majority background → demote to background
+      else if (bgNeighbors > fgNeighbors && bgNeighbors >= 5) {
+        mask[idx] = 1;
+        demoted++;
+      }
+    }
+  }
+  
+  console.log(`🔄 Phase 3 (refinement): promoted ${promoted} to fg, demoted ${demoted} to bg`);
+  
+  // ========== APPLY MASK ==========
+  let finalBg = 0, finalTrans = 0, finalFg = 0;
+  
+  for (let i = 0; i < totalPixels; i++) {
     const offset = i * channels;
     
     if (mask[i] === 1) {
       result[offset + 3] = 0;
-      bgRemoved++;
+      finalBg++;
     } else if (mask[i] === 2) {
-      const r = data[offset];
-      const g = data[offset + 1];
-      const b = data[offset + 2];
-      const dE = deltaE76Fast(r, g, b, bgLab);
-      
+      const dE = deltaEMap[i];
       const ratio = (dE - labThreshold) / (transitionThreshold - labThreshold);
       result[offset + 3] = Math.floor(Math.max(0, Math.min(255, ratio * 255)));
-      transitioned++;
+      finalTrans++;
+    } else {
+      finalFg++;
     }
   }
   
-  console.log(`🌊 Result: ${bgRemoved} bg removed, ${transitioned} transition, ${width*height - bgRemoved - transitioned} foreground kept`);
+  console.log(`✅ Final: bg=${finalBg}, transition=${finalTrans}, fg=${finalFg}`);
   
   return { result, mask };
 }
 
 // ============================================
-// POST-PROCESSING (mask-aware)
+// SMART POST-PROCESSING (mask-aware)
 // ============================================
 
-/**
- * Smart erosion: sadece arka planla temas eden kenar piksellerinde çalışır
- */
 function smartErosion(data, width, height, channels, mask, radius) {
   const result = Buffer.from(data);
-  // Collect pixels to erode first, then apply (avoid cascading)
   const toErode = [];
   
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const idx = y * width + x;
-      const offset = idx * channels;
-      
-      if (result[offset + 3] === 0) continue;
+      if (result[idx * channels + 3] === 0) continue;
       
       let touchesBg = false;
       for (let ky = -radius; ky <= radius && !touchesBg; ky++) {
         for (let kx = -radius; kx <= radius && !touchesBg; kx++) {
           if (kx === 0 && ky === 0) continue;
-          const ny = y + ky;
-          const nx = x + kx;
+          const ny = y + ky, nx = x + kx;
           if (ny < 0 || ny >= height || nx < 0 || nx >= width) {
             touchesBg = true;
           } else if (mask[ny * width + nx] === 1) {
@@ -339,50 +411,35 @@ function smartErosion(data, width, height, channels, mask, radius) {
     mask[idx] = 1;
   }
   
-  console.log(`🔧 Smart erosion: ${toErode.length} pixels eroded`);
+  console.log(`🔧 Erosion: ${toErode.length} pixels`);
   return result;
 }
 
-/**
- * Smart color decontamination: sadece transition zone piksellerde
- */
 function smartDecontamination(data, width, height, channels, mask, bgColor) {
   const result = Buffer.from(data);
   let cleaned = 0;
   
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = y * width + x;
-      const offset = idx * channels;
-      const alpha = result[offset + 3];
-      
-      if (alpha === 0 || alpha === 255) continue;
-      if (mask[idx] !== 2) continue;
-      
-      const a = alpha / 255;
-      if (a < 0.1) {
-        result[offset + 3] = 0;
-        continue;
-      }
-      
-      const r = result[offset];
-      const g = result[offset + 1];
-      const b = result[offset + 2];
-      
-      result[offset]     = Math.max(0, Math.min(255, Math.round((r - bgColor.r * (1 - a)) / a)));
-      result[offset + 1] = Math.max(0, Math.min(255, Math.round((g - bgColor.g * (1 - a)) / a)));
-      result[offset + 2] = Math.max(0, Math.min(255, Math.round((b - bgColor.b * (1 - a)) / a)));
-      cleaned++;
-    }
+  for (let i = 0; i < width * height; i++) {
+    const offset = i * channels;
+    const alpha = result[offset + 3];
+    
+    if (alpha === 0 || alpha === 255) continue;
+    if (mask[i] !== 2) continue;
+    
+    const a = alpha / 255;
+    if (a < 0.1) { result[offset + 3] = 0; continue; }
+    
+    const r = result[offset], g = result[offset + 1], b = result[offset + 2];
+    result[offset]     = Math.max(0, Math.min(255, Math.round((r - bgColor.r * (1 - a)) / a)));
+    result[offset + 1] = Math.max(0, Math.min(255, Math.round((g - bgColor.g * (1 - a)) / a)));
+    result[offset + 2] = Math.max(0, Math.min(255, Math.round((b - bgColor.b * (1 - a)) / a)));
+    cleaned++;
   }
   
-  console.log(`🧪 Decontamination: ${cleaned} pixels cleaned`);
+  console.log(`🧪 Decontamination: ${cleaned} pixels`);
   return result;
 }
 
-/**
- * Alpha edge softening: sadece bg kenarlarında
- */
 function smartEdgeSoftening(data, width, height, channels, mask, radius = 1) {
   const result = Buffer.from(data);
   
@@ -390,10 +447,8 @@ function smartEdgeSoftening(data, width, height, channels, mask, radius = 1) {
     for (let x = radius; x < width - radius; x++) {
       const idx = y * width + x;
       const offset = idx * channels;
-      
       if (data[offset + 3] === 0) continue;
       
-      // Check if on bg edge
       let isEdge = false;
       for (let ky = -1; ky <= 1 && !isEdge; ky++) {
         for (let kx = -1; kx <= 1 && !isEdge; kx++) {
@@ -401,27 +456,20 @@ function smartEdgeSoftening(data, width, height, channels, mask, radius = 1) {
           if (mask[(y + ky) * width + (x + kx)] === 1) isEdge = true;
         }
       }
-      
       if (!isEdge) continue;
       
-      let totalAlpha = 0;
-      let totalWeight = 0;
-      
+      let totalAlpha = 0, totalWeight = 0;
       for (let ky = -radius; ky <= radius; ky++) {
         for (let kx = -radius; kx <= radius; kx++) {
-          const ny = y + ky;
-          const nx = x + kx;
+          const ny = y + ky, nx = x + kx;
           if (ny < 0 || ny >= height || nx < 0 || nx >= width) continue;
-          
           const nOffset = (ny * width + nx) * channels;
           const dist = Math.sqrt(kx * kx + ky * ky);
           const weight = Math.exp(-(dist * dist) / (2 * 0.8 * 0.8));
-          
           totalAlpha += data[nOffset + 3] * weight;
           totalWeight += weight;
         }
       }
-      
       result[offset + 3] = Math.round(totalAlpha / totalWeight);
     }
   }
@@ -437,13 +485,12 @@ app.get('/', (req, res) => {
   res.json({ 
     status: 'ok',
     service: 'Yerlikaya Auto Crop API',
-    version: '3.1.0',
-    endpoints: { crop: 'POST /crop', trim: 'POST /trim' },
+    version: '3.2.0',
     features: [
-      'Flood-fill connected background removal',
+      'Flood-fill + interior island removal',
+      'Transition zone refinement (text preservation)',
       'CIE Lab perceptual color distance',
-      'Smart mask-aware post-processing',
-      'Preserves dark elements inside design'
+      'Smart mask-aware post-processing'
     ]
   });
 });
@@ -455,114 +502,93 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     const imageFile = req.file;
     if (!imageFile) return res.status(400).json({ error: 'Image file required' });
     
-    const maxSize = 20 * 1024 * 1024;
-    if (imageFile.size > maxSize) {
+    if (imageFile.size > 20 * 1024 * 1024) {
       await fs.unlink(imageFile.path);
       return res.status(400).json({ error: 'File too large', maxSize: '20MB' });
     }
     
     imagePath = imageFile.path;
     const threshold = parseInt(req.body.threshold) || 15;
-    const quality = req.body.quality || 'standard';
     const erosionRadius = parseInt(req.body.erosion) || 1;
     const decontaminate = req.body.decontaminate !== 'false';
     const softenEdges = req.body.softenEdges !== 'false';
+    const minIslandSize = parseInt(req.body.minIsland) || 100;
     
     console.log('='.repeat(60));
-    console.log('🔍 Yerlikaya Auto Crop v3.1 — Flood-Fill Mode');
-    console.log(`📊 Quality: ${quality}, Threshold: ${threshold}`);
-    console.log(`📊 Erosion: ${erosionRadius}px, Decontaminate: ${decontaminate}, Soften: ${softenEdges}`);
+    console.log('🔍 Yerlikaya Auto Crop v3.2');
+    console.log(`📊 Threshold: ${threshold}, Erosion: ${erosionRadius}px`);
+    console.log(`📊 Decontaminate: ${decontaminate}, Soften: ${softenEdges}`);
+    console.log(`📊 Min island size: ${minIslandSize}px`);
     
-    // Load image
-    const image = sharp(imagePath);
-    const { data, info } = await image.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-    console.log(`📐 Image: ${info.width}x${info.height}, ch: ${info.channels}`);
+    // Load
+    const { data, info } = await sharp(imagePath)
+      .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    console.log(`📐 Image: ${info.width}x${info.height}`);
     
     // Background detection
-    console.log('🎨 Background detection...');
     const bgColor = detectBackgroundColor(data, info.width, info.height, info.channels);
     console.log('🎨 Background:', bgColor);
     
-    // Sharp trim
-    console.log('✂️ Initial trim...');
+    // Trim
+    console.log('✂️ Trimming...');
     const croppedBuffer = await sharp(imagePath)
-      .trim({ background: bgColor, threshold: threshold })
+      .trim({ background: bgColor, threshold })
       .toBuffer();
     
-    const { data: croppedData, info: croppedInfo } = await sharp(croppedBuffer)
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+    const { data: croppedData, info: ci } = await sharp(croppedBuffer)
+      .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    console.log(`📐 Cropped: ${ci.width}x${ci.height}`);
     
-    console.log(`📐 Cropped: ${croppedInfo.width}x${croppedInfo.height}`);
+    // ===== MAIN PIPELINE =====
+    const t0 = Date.now();
     
-    // ===== FLOOD-FILL PIPELINE =====
-    const startTime = Date.now();
-    
-    console.log('🌊 Flood-fill background removal...');
-    let { result: processed, mask } = floodFillBackgroundRemoval(
-      croppedData, croppedInfo.width, croppedInfo.height,
-      croppedInfo.channels, bgColor, threshold
+    // Advanced removal (flood-fill + islands + refinement)
+    let { result: processed, mask } = advancedBackgroundRemoval(
+      croppedData, ci.width, ci.height, ci.channels,
+      bgColor, threshold, minIslandSize
     );
     
-    console.log(`⏱️ Flood-fill: ${Date.now() - startTime}ms`);
+    console.log(`⏱️ Removal: ${Date.now() - t0}ms`);
     
-    // Smart erosion (iterative, each pass uses updated mask)
+    // Smart erosion
     if (erosionRadius > 0) {
-      console.log(`🔧 Smart erosion (${erosionRadius} pass)...`);
       for (let i = 0; i < erosionRadius; i++) {
-        processed = smartErosion(
-          processed, croppedInfo.width, croppedInfo.height,
-          croppedInfo.channels, mask, 1
-        );
+        processed = smartErosion(processed, ci.width, ci.height, ci.channels, mask, 1);
       }
     }
     
-    // Smart decontamination
+    // Decontamination
     if (decontaminate) {
-      console.log('🧪 Smart decontamination...');
-      processed = smartDecontamination(
-        processed, croppedInfo.width, croppedInfo.height,
-        croppedInfo.channels, mask, bgColor
-      );
+      processed = smartDecontamination(processed, ci.width, ci.height, ci.channels, mask, bgColor);
     }
     
-    // Smart edge softening
+    // Edge softening
     if (softenEdges) {
-      console.log('✨ Smart edge softening...');
-      processed = smartEdgeSoftening(
-        processed, croppedInfo.width, croppedInfo.height,
-        croppedInfo.channels, mask
-      );
+      processed = smartEdgeSoftening(processed, ci.width, ci.height, ci.channels, mask);
     }
     
     labCache.clear();
     
-    // Final PNG
-    console.log('🎯 Generating PNG...');
+    // PNG output
     const result = await sharp(processed, {
-      raw: {
-        width: croppedInfo.width,
-        height: croppedInfo.height,
-        channels: croppedInfo.channels
-      }
+      raw: { width: ci.width, height: ci.height, channels: ci.channels }
     })
-    .png({ compressionLevel: 6, adaptiveFiltering: true, force: true })
+    .png({ compressionLevel: 6, adaptiveFiltering: true })
     .toBuffer();
     
-    console.log(`✅ Done! ${(result.length / 1024).toFixed(0)}KB, total: ${Date.now() - startTime}ms`);
+    console.log(`✅ Done! ${(result.length / 1024).toFixed(0)}KB, total: ${Date.now() - t0}ms`);
     console.log('='.repeat(60));
     
     res.set({
       'Content-Type': 'image/png',
-      'Content-Disposition': `attachment; filename="v3.1-cropped-${Date.now()}.png"`
+      'Content-Disposition': `attachment; filename="cropped-${Date.now()}.png"`
     });
     res.send(result);
     
   } catch (error) {
     console.error('❌ Error:', error);
     labCache.clear();
-    res.status(500).json({ error: 'Failed to process image', details: error.message });
+    res.status(500).json({ error: 'Failed to process', details: error.message });
   } finally {
     if (imagePath) await fs.unlink(imagePath).catch(() => {});
   }
@@ -574,14 +600,11 @@ app.post('/trim', upload.single('image'), async (req, res) => {
   try {
     const imageFile = req.file;
     if (!imageFile) return res.status(400).json({ error: 'Image file required' });
-    
     imagePath = imageFile.path;
-    const threshold = parseInt(req.body.threshold) || 10;
     
     const trimmedBuffer = await sharp(imagePath)
-      .trim({ threshold })
-      .png()
-      .toBuffer();
+      .trim({ threshold: parseInt(req.body.threshold) || 10 })
+      .png().toBuffer();
     
     res.set({
       'Content-Type': 'image/png',
@@ -589,7 +612,6 @@ app.post('/trim', upload.single('image'), async (req, res) => {
     });
     res.send(trimmedBuffer);
   } catch (error) {
-    console.error('❌ Trim Error:', error);
     res.status(500).json({ error: 'Failed to trim', details: error.message });
   } finally {
     if (imagePath) await fs.unlink(imagePath).catch(() => {});
@@ -597,5 +619,5 @@ app.post('/trim', upload.single('image'), async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Yerlikaya Auto Crop API v3.1 (Flood-Fill) on port ${PORT}`);
+  console.log(`🚀 Yerlikaya Auto Crop API v3.2 on port ${PORT}`);
 });
