@@ -290,7 +290,7 @@
 <body>
     <div class="container">
         <h1>🎯 Yerlikaya Auto Crop Tool</h1>
-        <div class="version-badge"><span>v3.4 — Flood-Fill + Aggressive Boundary Cleanup</span></div>
+        <div class="version-badge"><span>v3.5 — Upscale Pipeline + Flood-Fill + Boundary Cleanup</span></div>
         
         <div class="upload-section" id="uploadSection">
             <h3>📁 Resim Yükle</h3>
@@ -325,6 +325,14 @@
                     <label style="font-size: 12px;">Min Island Size: <span class="value-badge" id="islandValue">100</span> px</label>
                     <input type="range" id="minIsland" min="20" max="1000" value="100" step="10">
                     <small>Tasarım içindeki bg adalarını kaldırır. Düşük = daha agresif, Yüksek = sadece büyük alanlar</small>
+                </div>
+                
+                <div class="control-group" style="margin-top: 16px;">
+                    <h4>🔎 Upscale Pipeline</h4>
+                    <label style="font-size: 12px;">Upscale Factor: <span class="value-badge" id="upscaleValue">2</span>x</label>
+                    <input type="range" id="upscale" min="1" max="4" value="2" step="1">
+                    <small>1x = kapalı • 2x = önerilen • 4x = en temiz kenar (yavaş)<br>
+                    Upscale → BG kaldır → Downscale = çok daha temiz kenarlar</small>
                 </div>
             </div>
             
@@ -378,8 +386,8 @@
         <button id="processBtn" disabled>🚀 İşleme Başla</button>
         
         <div id="processing" class="processing" style="display: none;">
-            <div>⏳ İşleniyor... Flood-Fill + Smart Post-Processing</div>
-            <div style="margin-top: 8px; font-size: 13px;">Bu işlem 10-30 saniye sürebilir.</div>
+            <div>⏳ İşleniyor... Upscale → BG Removal → Downscale</div>
+            <div style="margin-top: 8px; font-size: 13px;">Upscale ayarına göre 10-60 saniye sürebilir.</div>
         </div>
         
         <div id="errorDiv" style="display: none;"></div>
@@ -425,6 +433,10 @@
         const minIslandSlider = document.getElementById('minIsland');
         const islandValue = document.getElementById('islandValue');
         minIslandSlider.addEventListener('input', e => islandValue.textContent = e.target.value);
+        
+        const upscaleSlider = document.getElementById('upscale');
+        const upscaleValue = document.getElementById('upscaleValue');
+        upscaleSlider.addEventListener('input', e => upscaleValue.textContent = e.target.value);
         
         // Toggle erosion slider visibility
         document.getElementById('toggleErosion').addEventListener('change', function() {
@@ -501,6 +513,7 @@
                     formData.append('decontaminate', document.getElementById('toggleDecontaminate').checked ? 'true' : 'false');
                     formData.append('softenEdges', document.getElementById('toggleSoften').checked ? 'true' : 'false');
                     formData.append('minIsland', minIslandSlider.value);
+                    formData.append('upscale', upscaleSlider.value);
                 }
                 
                 console.log('🚀 Processing:', selectedMethod, 'threshold:', thresholdSlider.value);
