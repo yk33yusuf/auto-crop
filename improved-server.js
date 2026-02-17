@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static('.'));
-app.use((req, res, next) => { req.setTimeout(180000); res.setTimeout(180000); next(); });
+app.use((req, res, next) => { req.setTimeout(300000); res.setTimeout(300000); next(); }); // 5 min for upscale
 
 const upload = multer({ dest: 'uploads/', limits: { fileSize: 50 * 1024 * 1024 } });
 fs.mkdir('uploads', { recursive: true });
@@ -92,7 +92,7 @@ function advancedBackgroundRemoval(data, width, height, channels, bgColor, thres
     dem[i] = deltaE76Fast(data[o], data[o+1], data[o+2], bgLab);
   }
   
-  const mask = new Uint8Array(tp); // 0=unvisited, 1=bg, 2=transition, 3=fg
+  const mask = new Uint8Array(tp);
   
   // === PHASE 1: Edge flood-fill ===
   const queue = new Int32Array(tp);
@@ -176,14 +176,9 @@ function advancedBackgroundRemoval(data, width, height, channels, bgColor, thres
   }
   console.log(`🔄 Phase 3 (refine): +${prom} fg, +${dem2} bg`);
   
-  // === PHASE 4: Boundary cleanup (OPTIMIZED VALUES) ===
-  // 5 passes, boundaryHard=1.5x, boundarySoft=2.2x
+  // === PHASE 4: Boundary cleanup ===
   let bcTotal = 0;
-  const BOUNDARY_PASSES = 5;
-  const BOUNDARY_HARD = 1.5;   // Was 1.2 — now more aggressive
-  const BOUNDARY_SOFT = 2.2;   // Was 1.8 — now wider soft zone
-  
-  for (let pass = 0; pass < BOUNDARY_PASSES; pass++) {
+  for (let pass = 0; pass < 5; pass++) {
     let pc = 0;
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
@@ -193,20 +188,20 @@ function advancedBackgroundRemoval(data, width, height, channels, bgColor, thres
         let touchesBg = false;
         for (let d = 0; d < 8 && !touchesBg; d++) {
           const nx=x+dx8[d], ny=y+dy8[d];
-          if (nx<0||nx>=width||ny<0||ny>=height) { touchesBg=true; }
+          if (nx<0||nx>=width||ny<0||ny>=height) touchesBg=true;
           else if (mask[ny*width+nx] === 1) touchesBg = true;
         }
         if (!touchesBg) continue;
         
         const d = dem[i];
-        if (d <= labTh * BOUNDARY_HARD) { mask[i]=1; pc++; }
-        else if (d <= labTh * BOUNDARY_SOFT) { mask[i]=2; pc++; }
+        if (d <= labTh * 1.5) { mask[i]=1; pc++; }
+        else if (d <= labTh * 2.2) { mask[i]=2; pc++; }
       }
     }
     bcTotal += pc;
     if (pc === 0) break;
   }
-  console.log(`🧹 Phase 4 (boundary): ${bcTotal} px cleaned`);
+  console.log(`🧹 Phase 4 (boundary): ${bcTotal} px`);
   
   // === PHASE 5: Apply mask ===
   let fBg=0, fTr=0, fFg=0;
@@ -284,8 +279,8 @@ function smartEdgeSoftening(data, w, h, ch, mask, r=1) {
 // ENDPOINTS
 // ============================================
 app.get('/', (req, res) => {
-  res.json({ status:'ok', service:'Yerlikaya Auto Crop API', version:'3.4.0',
-    features:['Flood-fill + island removal','Aggressive boundary cleanup','Transition refinement','CIE Lab','Smart post-processing'] });
+  res.json({ status:'ok', service:'Yerlikaya Auto Crop API', version:'3.5.0',
+    features:['Upscale pipeline (2x-4x)','Flood-fill + island removal','Boundary cleanup','CIE Lab','Smart post-processing'] });
 });
 
 app.post('/crop', upload.single('image'), async (req, res) => {
@@ -301,37 +296,96 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     const decontaminate = req.body.decontaminate!=='false';
     const softenEdges = req.body.softenEdges!=='false';
     const minIslandSize = parseInt(req.body.minIsland)||100;
+    const upscaleFactor = parseInt(req.body.upscale)||2; // 1=off, 2=2x, 3=3x, 4=4x
     
     console.log('='.repeat(60));
-    console.log(`🔍 v3.4 | th:${threshold} ero:${erosionRadius} island:${minIslandSize}`);
+    console.log(`🔍 v3.5 | th:${threshold} ero:${erosionRadius} island:${minIslandSize} upscale:${upscaleFactor}x`);
     
-    const {data,info} = await sharp(imagePath).ensureAlpha().raw().toBuffer({resolveWithObject:true});
-    console.log(`📐 ${info.width}x${info.height}`);
+    // Load original
+    const originalMeta = await sharp(imagePath).metadata();
+    const origW = originalMeta.width;
+    const origH = originalMeta.height;
+    console.log(`📐 Original: ${origW}x${origH}`);
     
-    const bgColor = detectBackgroundColor(data, info.width, info.height, info.channels);
+    // === STEP 1: Detect background on original ===
+    const {data: origData, info: origInfo} = await sharp(imagePath).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+    const bgColor = detectBackgroundColor(origData, origInfo.width, origInfo.height, origInfo.channels);
     console.log('🎨 BG:', bgColor);
     
-    const croppedBuf = await sharp(imagePath).trim({background:bgColor,threshold}).toBuffer();
-    const {data:cd,info:ci} = await sharp(croppedBuf).ensureAlpha().raw().toBuffer({resolveWithObject:true});
-    console.log(`✂️ ${ci.width}x${ci.height}`);
+    // === STEP 2: Upscale ===
+    let workBuffer;
+    if (upscaleFactor > 1) {
+      const upW = origW * upscaleFactor;
+      const upH = origH * upscaleFactor;
+      console.log(`🔎 Upscaling ${upscaleFactor}x → ${upW}x${upH}`);
+      workBuffer = await sharp(imagePath)
+        .resize(upW, upH, { kernel: 'lanczos3', fit: 'fill' })
+        .toBuffer();
+    } else {
+      workBuffer = await sharp(imagePath).toBuffer();
+    }
+    
+    // === STEP 3: Trim on upscaled ===
+    console.log('✂️ Trimming...');
+    const trimmedBuffer = await sharp(workBuffer)
+      .trim({ background: bgColor, threshold })
+      .toBuffer();
+    
+    // Get trimmed dimensions for downscale ratio
+    const trimMeta = await sharp(trimmedBuffer).metadata();
+    
+    const {data: cd, info: ci} = await sharp(trimmedBuffer)
+      .ensureAlpha().raw().toBuffer({resolveWithObject:true});
+    console.log(`📐 Work size: ${ci.width}x${ci.height}`);
     
     const t0 = Date.now();
-    let {result:processed,mask} = advancedBackgroundRemoval(cd,ci.width,ci.height,ci.channels,bgColor,threshold,minIslandSize);
     
-    if(erosionRadius>0) for(let i=0;i<erosionRadius;i++) processed=smartErosion(processed,ci.width,ci.height,ci.channels,mask,1);
-    if(decontaminate) processed=smartDecontamination(processed,ci.width,ci.height,ci.channels,mask,bgColor);
-    if(softenEdges) processed=smartEdgeSoftening(processed,ci.width,ci.height,ci.channels,mask);
+    // === STEP 4: Background removal on upscaled ===
+    // Scale island size with upscale factor
+    const scaledIslandSize = minIslandSize * upscaleFactor * upscaleFactor;
+    
+    let {result: processed, mask} = advancedBackgroundRemoval(
+      cd, ci.width, ci.height, ci.channels, bgColor, threshold, scaledIslandSize
+    );
+    
+    console.log(`⏱️ Removal: ${Date.now()-t0}ms`);
+    
+    // === STEP 5: Post-processing on upscaled ===
+    if (erosionRadius > 0) {
+      for (let i = 0; i < erosionRadius; i++)
+        processed = smartErosion(processed, ci.width, ci.height, ci.channels, mask, 1);
+    }
+    if (decontaminate)
+      processed = smartDecontamination(processed, ci.width, ci.height, ci.channels, mask, bgColor);
+    if (softenEdges)
+      processed = smartEdgeSoftening(processed, ci.width, ci.height, ci.channels, mask);
     
     labCache.clear();
     
-    const result = await sharp(processed,{raw:{width:ci.width,height:ci.height,channels:ci.channels}})
-      .png({compressionLevel:6,adaptiveFiltering:true}).toBuffer();
+    // === STEP 6: Create PNG from processed pixels ===
+    let finalBuffer = await sharp(processed, {
+      raw: { width: ci.width, height: ci.height, channels: ci.channels }
+    }).png({ compressionLevel: 6, adaptiveFiltering: true }).toBuffer();
     
-    console.log(`✅ ${(result.length/1024).toFixed(0)}KB in ${Date.now()-t0}ms`);
+    // === STEP 7: Downscale back to original proportions ===
+    if (upscaleFactor > 1) {
+      // Calculate target size: trimmed size / upscale factor
+      const targetW = Math.round(ci.width / upscaleFactor);
+      const targetH = Math.round(ci.height / upscaleFactor);
+      console.log(`🔽 Downscaling → ${targetW}x${targetH}`);
+      
+      finalBuffer = await sharp(finalBuffer)
+        .resize(targetW, targetH, { kernel: 'lanczos3', fit: 'fill' })
+        .png({ compressionLevel: 6, adaptiveFiltering: true })
+        .toBuffer();
+    }
+    
+    console.log(`✅ ${(finalBuffer.length/1024).toFixed(0)}KB in ${Date.now()-t0}ms`);
     console.log('='.repeat(60));
     
     res.set({'Content-Type':'image/png','Content-Disposition':`attachment; filename="cropped-${Date.now()}.png"`});
-    res.send(result);
+    res.send(finalBuffer);
+    
   } catch(e) {
     console.error('❌',e); labCache.clear();
     res.status(500).json({error:'Failed',details:e.message});
@@ -350,4 +404,4 @@ app.post('/trim', upload.single('image'), async (req, res) => {
   finally { if(imagePath) await fs.unlink(imagePath).catch(()=>{}); }
 });
 
-app.listen(PORT, () => console.log(`🚀 Yerlikaya Auto Crop v3.4 on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Yerlikaya Auto Crop v3.5 (Upscale Pipeline) on port ${PORT}`));
