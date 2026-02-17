@@ -3,105 +3,203 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Yerlikaya Auto Crop Tool v2.0</title>
+    <title>Yerlikaya Auto Crop Tool v3.0</title>
     <style>
+        * { box-sizing: border-box; }
+        
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
             min-height: 100vh;
         }
         
         .container {
-            background: white;
-            border-radius: 15px;
+            background: #ffffff;
+            border-radius: 16px;
             padding: 30px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
         
         h1 {
             text-align: center;
-            color: #333;
-            margin-bottom: 30px;
+            color: #1a1a2e;
+            margin-bottom: 8px;
+            font-size: 24px;
+        }
+        
+        .version-badge {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        
+        .version-badge span {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
         }
         
         .upload-section {
-            border: 3px dashed #ccc;
-            border-radius: 10px;
-            padding: 40px;
+            border: 3px dashed #d0d0d0;
+            border-radius: 12px;
+            padding: 36px;
             text-align: center;
-            margin-bottom: 30px;
-            transition: border-color 0.3s;
+            margin-bottom: 24px;
+            transition: all 0.3s;
+            cursor: pointer;
         }
         
-        .upload-section:hover {
-            border-color: #667eea;
-        }
-        
-        .upload-section.drag-over {
+        .upload-section:hover, .upload-section.drag-over {
             border-color: #667eea;
             background-color: #f8f9ff;
-        }
-        
-        #fileInput {
-            margin: 20px 0;
         }
         
         .controls {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 30px;
+            gap: 16px;
+            margin-bottom: 24px;
         }
         
         .control-group {
             background: #f8f9fa;
-            padding: 20px;
+            padding: 18px;
             border-radius: 10px;
+        }
+        
+        .control-group h4 {
+            margin: 0 0 12px 0;
+            color: #333;
+            font-size: 14px;
         }
         
         label {
             display: block;
-            font-weight: bold;
-            margin-bottom: 8px;
+            font-weight: 600;
+            margin-bottom: 6px;
             color: #555;
+            font-size: 13px;
         }
         
         input[type="range"] {
             width: 100%;
-            margin: 10px 0;
+            margin: 6px 0;
         }
         
-        .threshold-value {
+        .value-badge {
             background: #667eea;
             color: white;
-            padding: 5px 10px;
-            border-radius: 20px;
-            font-size: 14px;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 13px;
             font-weight: bold;
+        }
+        
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .toggle-row:last-child { border-bottom: none; }
+        
+        .toggle-label {
+            font-size: 13px;
+            color: #444;
+            font-weight: 500;
+        }
+        
+        .toggle-desc {
+            font-size: 11px;
+            color: #888;
+            margin-top: 2px;
+        }
+        
+        /* Toggle Switch */
+        .switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            flex-shrink: 0;
+        }
+        
+        .switch input { opacity: 0; width: 0; height: 0; }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #ccc;
+            transition: 0.3s;
+            border-radius: 24px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .slider { background-color: #667eea; }
+        input:checked + .slider:before { transform: translateX(20px); }
+        
+        /* Radio buttons */
+        .method-option {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            margin: 4px 0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .method-option:hover { background: #e9ecef; }
+        
+        .method-option input[type="radio"] { margin-right: 8px; }
+        
+        .method-option label {
+            display: inline;
+            margin: 0;
+            cursor: pointer;
+            font-weight: 500;
         }
         
         button {
-            background: linear-gradient(45deg, #667eea, #764ba2);
+            background: linear-gradient(135deg, #667eea, #764ba2);
             color: white;
             border: none;
-            padding: 15px 30px;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: bold;
+            padding: 14px 28px;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 700;
             cursor: pointer;
             width: 100%;
-            transition: transform 0.2s;
+            transition: all 0.2s;
+            letter-spacing: 0.3px;
         }
         
         button:hover:not(:disabled) {
             transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
         }
         
         button:disabled {
-            opacity: 0.6;
+            opacity: 0.5;
             cursor: not-allowed;
         }
         
@@ -109,90 +207,90 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 20px;
-            margin-top: 30px;
+            margin-top: 24px;
         }
         
         .result-item {
             text-align: center;
             background: #f8f9fa;
-            padding: 20px;
+            padding: 16px;
             border-radius: 10px;
         }
         
         .result-item h3 {
-            margin: 0 0 15px 0;
+            margin: 0 0 12px 0;
             color: #333;
+            font-size: 14px;
         }
         
         .result-item img {
             max-width: 100%;
             height: auto;
             border-radius: 8px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        /* Checkerboard background for transparency preview */
+        .result-item.processed {
+            background: 
+                linear-gradient(45deg, #e0e0e0 25%, transparent 25%),
+                linear-gradient(-45deg, #e0e0e0 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #e0e0e0 75%),
+                linear-gradient(-45deg, transparent 75%, #e0e0e0 75%);
+            background-size: 16px 16px;
+            background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+            background-color: #f0f0f0;
         }
         
         .processing {
             text-align: center;
-            padding: 20px;
+            padding: 24px;
             color: #667eea;
-            font-weight: bold;
+            font-weight: 600;
         }
         
         .error {
             background: #f8d7da;
             color: #721c24;
-            padding: 15px;
+            padding: 12px 16px;
             border-radius: 8px;
-            margin: 10px 0;
+            margin: 12px 0;
+            font-size: 14px;
         }
         
         .success {
             background: #d4edda;
             color: #155724;
-            padding: 15px;
+            padding: 12px 16px;
             border-radius: 8px;
-            margin: 10px 0;
+            margin: 12px 0;
+            font-size: 14px;
         }
         
         .download-btn {
-            background: #28a745;
-            font-size: 14px;
-            padding: 10px 20px;
+            background: #28a745 !important;
+            font-size: 13px !important;
+            padding: 10px 20px !important;
             margin-top: 10px;
+            width: auto !important;
         }
-
-        .api-info {
-            background: #e7f3ff;
-            border-left: 4px solid #2196F3;
-            padding: 15px;
-            margin-bottom: 20px;
-            border-radius: 0 8px 8px 0;
-        }
-
-        .api-info h4 {
-            margin: 0 0 10px 0;
-            color: #1565C0;
-        }
-
-        .code {
-            background: #f5f5f5;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-family: monospace;
-            font-size: 14px;
+        
+        small {
+            color: #888;
+            font-size: 11px;
+            line-height: 1.4;
         }
         
         @media (max-width: 768px) {
-            .controls, .results {
-                grid-template-columns: 1fr;
-            }
+            .controls, .results { grid-template-columns: 1fr; }
+            body { padding: 10px; }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎯 Yerlikaya Auto Crop Tool v2.0</h1>
-
+        <h1>🎯 Yerlikaya Auto Crop Tool</h1>
+        <div class="version-badge"><span>v3.0 — CIE Lab + Post-Processing Pipeline</span></div>
         
         <div class="upload-section" id="uploadSection">
             <h3>📁 Resim Yükle</h3>
@@ -201,181 +299,184 @@
         </div>
         
         <div class="controls">
-            <div class="control-group">
-                <label for="threshold">🎚️ Sensitivity Threshold</label>
-                <input type="range" id="threshold" min="0" max="50" value="15" step="1">
-                <div>Değer: <span class="threshold-value" id="thresholdValue">15</span></div>
-                <small>0: En hassas (maksimum temizleme)<br>
-                       25+: Toleranslı (az temizleme)<br>
-                       Orange background için 10-20 önerilir</small>
+            <!-- Sol: Threshold + Method -->
+            <div>
+                <div class="control-group" style="margin-bottom: 16px;">
+                    <h4>🎚️ Sensitivity Threshold</h4>
+                    <input type="range" id="threshold" min="0" max="50" value="15" step="1">
+                    <div>Değer: <span class="value-badge" id="thresholdValue">15</span></div>
+                    <small>0 = en hassas • 15 = önerilen • 30+ = toleranslı</small>
+                </div>
+                
+                <div class="control-group">
+                    <h4>⚙️ Processing Method</h4>
+                    <div class="method-option">
+                        <input type="radio" id="methodStandard" name="processingMethod" value="standard" checked>
+                        <label for="methodStandard">Standard — CIE Lab removal</label>
+                    </div>
+                    <div class="method-option">
+                        <input type="radio" id="methodPremium" name="processingMethod" value="premium">
+                        <label for="methodPremium">Premium — Edge-aware + CIE Lab</label>
+                    </div>
+                    <div class="method-option">
+                        <input type="radio" id="methodTrimOnly" name="processingMethod" value="trim-only">
+                        <label for="methodTrimOnly">✂️ Trim Only — Sadece kırpma</label>
+                    </div>
+                </div>
             </div>
             
-            <div class="control-group">
-                <label>🎚️ Processing Method</label>
-                <div style="margin: 10px 0;">
-                    <input type="radio" id="methodStandard" name="processingMethod" value="standard" checked>
-                    <label for="methodStandard" style="display: inline; margin-left: 5px;">Standard (Free)</label>
+            <!-- Sağ: Post-Processing Pipeline -->
+            <div>
+                <div class="control-group" id="postProcessingGroup">
+                    <h4>🔧 Post-Processing Pipeline</h4>
+                    
+                    <div class="toggle-row">
+                        <div>
+                            <div class="toggle-label">Morphological Erosion</div>
+                            <div class="toggle-desc">Kenardaki fringe/kalıntıları keser</div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggleErosion" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    
+                    <div id="erosionSliderRow" style="padding: 4px 0 8px 0;">
+                        <label style="font-size: 12px;">Erosion Radius: <span class="value-badge" id="erosionValue">1</span> px</label>
+                        <input type="range" id="erosionRadius" min="1" max="3" value="1" step="1">
+                        <small>1 = ince temizlik • 2 = orta • 3 = agresif</small>
+                    </div>
+                    
+                    <div class="toggle-row">
+                        <div>
+                            <div class="toggle-label">Color Decontamination</div>
+                            <div class="toggle-desc">Halo/renk karışımını temizler</div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggleDecontaminate" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    
+                    <div class="toggle-row">
+                        <div>
+                            <div class="toggle-label">Alpha Edge Softening</div>
+                            <div class="toggle-desc">Kenar geçişlerini yumuşatır</div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggleSoften" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
                 </div>
-                <div style="margin: 10px 0;">
-                    <input type="radio" id="methodPremium" name="processingMethod" value="premium">
-                    <label for="methodPremium" style="display: inline; margin-left: 5px;">Premium (Free)</label>
-                </div>
-                <div style="margin: 10px 0;">
-                    <input type="radio" id="methodTrimOnly" name="processingMethod" value="trim-only">
-                    <label for="methodTrimOnly" style="display: inline; margin-left: 5px;">✂️ Trim Only (Free)</label>
-                </div>
-                <small>Standard: Hızlı background removal + crop<br>
-                       Premium: Canva-style edge detection + crop<br>
-                       Trim Only: Sadece kenar kırpma (arkaplan korunur)</small>
             </div>
-
         </div>
         
         <button id="processBtn" disabled>🚀 İşleme Başla</button>
         
         <div id="processing" class="processing" style="display: none;">
-            <div>⏳ İşleniyor... Lütfen bekleyin</div>
-            <div style="margin-top: 10px;">Bu işlem 10-30 saniye sürebilir.</div>
-        </div>
-        
-        <div id="results" class="results" style="display: none;">
-            <div class="result-item">
-                <h3>📷 Orijinal Resim</h3>
-                <img id="originalImg" src="" alt="Original">
-            </div>
-            <div class="result-item">
-                <h3>✨ İşlenmiş Resim</h3>
-                <img id="processedImg" src="" alt="Processed">
-                <button id="downloadBtn" class="download-btn" style="display: none;">
-                    💾 İndir
-                </button>
-            </div>
+            <div>⏳ İşleniyor... CIE Lab + Post-Processing Pipeline</div>
+            <div style="margin-top: 8px; font-size: 13px;">Bu işlem 10-30 saniye sürebilir.</div>
         </div>
         
         <div id="errorDiv" style="display: none;"></div>
+        
+        <div id="results" class="results" style="display: none;">
+            <div class="result-item">
+                <h3>📷 Orijinal</h3>
+                <img id="originalImg" alt="Original">
+            </div>
+            <div class="result-item processed">
+                <h3>✅ İşlenmiş</h3>
+                <img id="processedImg" alt="Processed">
+                <button class="download-btn" id="downloadBtn" style="display: none;">💾 İndir (PNG)</button>
+            </div>
+        </div>
     </div>
-
+    
     <script>
-        // DOM elementlerini al
         const fileInput = document.getElementById('fileInput');
-        const processBtn = document.getElementById('processBtn');
+        const uploadSection = document.getElementById('uploadSection');
         const thresholdSlider = document.getElementById('threshold');
         const thresholdValue = document.getElementById('thresholdValue');
-        const uploadSection = document.getElementById('uploadSection');
-        const results = document.getElementById('results');
+        const erosionRadius = document.getElementById('erosionRadius');
+        const erosionValue = document.getElementById('erosionValue');
+        const processBtn = document.getElementById('processBtn');
         const processing = document.getElementById('processing');
+        const results = document.getElementById('results');
         const errorDiv = document.getElementById('errorDiv');
         const originalImg = document.getElementById('originalImg');
         const processedImg = document.getElementById('processedImg');
         const downloadBtn = document.getElementById('downloadBtn');
+        const postProcessingGroup = document.getElementById('postProcessingGroup');
+        const erosionSliderRow = document.getElementById('erosionSliderRow');
         
         let selectedFile = null;
         let processedBlob = null;
-        
-        // API URL
         const API_URL = window.location.origin;
         
-        // Sayfa yüklendiğinde
-        document.addEventListener('DOMContentLoaded', function() {
-            // Başlangıç threshold değerini göster
-            thresholdValue.textContent = thresholdSlider.value;
-            
-            console.log('🚀 Page loaded, API URL:', API_URL);
+        // Slider updates
+        thresholdSlider.addEventListener('input', e => thresholdValue.textContent = e.target.value);
+        erosionRadius.addEventListener('input', e => erosionValue.textContent = e.target.value);
+        
+        // Toggle erosion slider visibility
+        document.getElementById('toggleErosion').addEventListener('change', function() {
+            erosionSliderRow.style.display = this.checked ? 'block' : 'none';
         });
         
-        // Threshold slider değişimi
-        thresholdSlider.addEventListener('input', function(e) {
-            thresholdValue.textContent = e.target.value;
-            console.log('📊 Threshold changed to:', e.target.value);
+        // Trim-only seçilince post-processing'i disable et
+        document.querySelectorAll('input[name="processingMethod"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const isTrimOnly = this.value === 'trim-only';
+                postProcessingGroup.style.opacity = isTrimOnly ? '0.4' : '1';
+                postProcessingGroup.style.pointerEvents = isTrimOnly ? 'none' : 'auto';
+            });
         });
         
-        // Dosya seçimi
-        fileInput.addEventListener('change', function(event) {
-            handleFileSelect(event);
-        });
+        // File selection
+        fileInput.addEventListener('change', handleFileSelect);
         
-        // İşleme butonu
-        processBtn.addEventListener('click', function() {
-            if (selectedFile) {
-                processImage();
-            }
-        });
-        
-        // İndirme butonu
-        downloadBtn.addEventListener('click', function() {
-            if (processedBlob) {
-                downloadImage();
-            }
-        });
-        
-        // Drag & Drop events
-        uploadSection.addEventListener('dragover', function(e) {
-            e.preventDefault();
-            uploadSection.classList.add('drag-over');
-        });
-        
-        uploadSection.addEventListener('dragleave', function(e) {
+        uploadSection.addEventListener('dragover', e => { e.preventDefault(); uploadSection.classList.add('drag-over'); });
+        uploadSection.addEventListener('dragleave', e => { e.preventDefault(); uploadSection.classList.remove('drag-over'); });
+        uploadSection.addEventListener('drop', e => {
             e.preventDefault();
             uploadSection.classList.remove('drag-over');
-        });
-        
-        uploadSection.addEventListener('drop', function(e) {
-            e.preventDefault();
-            uploadSection.classList.remove('drag-over');
-            
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                fileInput.files = files;
-                handleFileSelect({ target: { files: files } });
+            if (e.dataTransfer.files.length > 0) {
+                fileInput.files = e.dataTransfer.files;
+                handleFileSelect({ target: { files: e.dataTransfer.files } });
             }
         });
         
         function handleFileSelect(event) {
             const file = event.target.files[0];
-            console.log('📁 File selected:', file);
-            
             if (file && file.type.startsWith('image/')) {
                 selectedFile = file;
                 processBtn.disabled = false;
-                
-                // Orijinal resmi göster
                 const reader = new FileReader();
-                reader.onload = function(e) {
-                    originalImg.src = e.target.result;
-                    console.log('🖼️ Image preview loaded');
-                };
+                reader.onload = e => originalImg.src = e.target.result;
                 reader.readAsDataURL(file);
-                
-                showMessage(`✅ Dosya seçildi: ${file.name}`, 'success');
+                showMessage(`✅ ${file.name} seçildi`, 'success');
             } else {
-                showMessage('❌ Lütfen geçerli bir resim dosyası seçin', 'error');
+                showMessage('❌ Geçerli bir resim dosyası seçin', 'error');
             }
         }
         
-        // Method change handling - API key section removed
+        processBtn.addEventListener('click', () => selectedFile && processImage());
+        downloadBtn.addEventListener('click', () => processedBlob && downloadImage());
         
         async function processImage() {
-            if (!selectedFile) {
-                showMessage('❌ Önce bir dosya seçin', 'error');
-                return;
-            }
+            if (!selectedFile) return;
             
             try {
-                console.log('🚀 Starting image processing...');
-                
                 processBtn.disabled = true;
                 processing.style.display = 'block';
                 results.style.display = 'none';
                 errorDiv.style.display = 'none';
                 
-                // Method seçimini al
                 const methodRadios = document.getElementsByName('processingMethod');
                 let selectedMethod = 'standard';
                 for (const radio of methodRadios) {
-                    if (radio.checked) {
-                        selectedMethod = radio.value;
-                        break;
-                    }
+                    if (radio.checked) { selectedMethod = radio.value; break; }
                 }
                 
                 const formData = new FormData();
@@ -386,58 +487,45 @@
                 
                 if (selectedMethod === 'trim-only') {
                     endpoint = '/trim';
-                    // Sadece threshold gönder, quality parametresi yok
                 } else {
                     formData.append('quality', selectedMethod);
+                    
+                    // Post-processing params
+                    const erosionOn = document.getElementById('toggleErosion').checked;
+                    formData.append('erosion', erosionOn ? erosionRadius.value : '0');
+                    formData.append('decontaminate', document.getElementById('toggleDecontaminate').checked ? 'true' : 'false');
+                    formData.append('softenEdges', document.getElementById('toggleSoften').checked ? 'true' : 'false');
                 }
                 
-                console.log('📤 Sending request to:', `${API_URL}${endpoint}`);
-                console.log('📊 Threshold:', thresholdSlider.value);
-                console.log('🎨 Method:', selectedMethod);
+                console.log('🚀 Processing:', selectedMethod, 'threshold:', thresholdSlider.value);
                 
                 const response = await fetch(`${API_URL}${endpoint}`, {
                     method: 'POST',
                     body: formData
                 });
                 
-                console.log('📥 Response status:', response.status);
-                
                 if (!response.ok) {
                     let errorMsg = `Server error: ${response.status}`;
                     try {
                         const errorData = await response.json();
                         errorMsg = errorData.error || errorMsg;
-                        
-                        if (errorData.info) {
-                            errorMsg += ` - ${errorData.info}`;
-                        }
-                    } catch(e) {
-                        console.log('Could not parse error JSON');
-                    }
+                    } catch(e) {}
                     throw new Error(errorMsg);
                 }
                 
                 processedBlob = await response.blob();
-                const processedUrl = URL.createObjectURL(processedBlob);
-                processedImg.src = processedUrl;
-                
+                processedImg.src = URL.createObjectURL(processedBlob);
                 downloadBtn.style.display = 'block';
-                
                 processing.style.display = 'none';
                 results.style.display = 'grid';
                 
-                let methodText = 'Standard';
-                if (selectedMethod === 'premium') methodText = 'Premium';
-                else if (selectedMethod === 'trim-only') methodText = '✂️ Trim Only';
-                
-                showMessage(`✅ İşlem başarıyla tamamlandı! Method: ${methodText}`, 'success');
-                
-                console.log('✅ Processing completed successfully');
+                const methodNames = { standard: 'Standard V3', premium: 'Premium V3', 'trim-only': 'Trim Only' };
+                showMessage(`✅ Tamamlandı — ${methodNames[selectedMethod]}`, 'success');
                 
             } catch (error) {
-                console.error('❌ Processing error:', error);
+                console.error('❌', error);
                 processing.style.display = 'none';
-                showMessage(`❌ Hata: ${error.message}`, 'error');
+                showMessage(`❌ ${error.message}`, 'error');
             } finally {
                 processBtn.disabled = false;
             }
@@ -445,58 +533,29 @@
         
         function downloadImage() {
             if (!processedBlob) return;
-            
-            // Method'u kontrol et
-            const methodRadios = document.getElementsByName('processingMethod');
-            let selectedMethod = 'standard';
-            for (const radio of methodRadios) {
-                if (radio.checked) {
-                    selectedMethod = radio.value;
-                    break;
-                }
-            }
-            
             const url = URL.createObjectURL(processedBlob);
             const a = document.createElement('a');
             a.href = url;
-            
-            const timestamp = Date.now();
-            const methodPrefix = selectedMethod === 'premium' ? 'premium' :
-                               selectedMethod === 'trim-only' ? 'trimmed' : 'standard';
-            a.download = `yerlikaya-${methodPrefix}-${timestamp}.png`;
-            
+            a.download = `yerlikaya-v3-${Date.now()}.png`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            
-            console.log('💾 Image downloaded as', `${methodPrefix} PNG`);
         }
         
         function showMessage(message, type) {
             errorDiv.className = type;
             errorDiv.textContent = message;
             errorDiv.style.display = 'block';
-            
-            console.log(`📢 Message (${type}):`, message);
-            
-            setTimeout(() => {
-                errorDiv.style.display = 'none';
-            }, 5000);
+            setTimeout(() => errorDiv.style.display = 'none', 5000);
         }
         
-        // API durumu kontrol et
-        window.addEventListener('load', async function() {
+        // API check
+        window.addEventListener('load', async () => {
             try {
-                const response = await fetch(`${API_URL}/`);
-                if (response.ok) {
-                    const data = await response.json();
-                    console.log('🚀 API Status:', data);
-                } else {
-                    console.warn('⚠️ API response not OK:', response.status);
-                }
-            } catch (error) {
-                console.warn('⚠️ API connection issue:', error.message);
+                const res = await fetch(`${API_URL}/`);
+                if (res.ok) console.log('🚀 API:', await res.json());
+            } catch (e) {
                 showMessage('⚠️ API bağlantısı kontrol ediliyor...', 'error');
             }
         });
