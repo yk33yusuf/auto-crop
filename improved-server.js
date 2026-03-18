@@ -435,17 +435,36 @@ async function detectAndTrimPanel(buffer, trimThreshold, trimPadding) {
   const cropW = maxX - minX + 1;
   const cropH = maxY - minY + 1;
   
-  const trimmedBuffer = await sharp(buffer)
+  // Phase 1: Manual crop based on bg detection
+  const croppedBuffer = await sharp(buffer)
     .extract({ left: minX, top: minY, width: cropW, height: cropH })
     .png()
     .toBuffer();
   
-  return {
-    buffer: trimmedBuffer,
-    width: cropW,
-    height: cropH,
-    isEmpty: false
-  };
+  // Phase 2: Sharp trim to catch JPEG artifact borders
+  // (white/gray fringes that manual detection misses)
+  try {
+    const finalBuffer = await sharp(croppedBuffer)
+      .trim({ threshold: 20 })
+      .png()
+      .toBuffer();
+    
+    const finalMeta = await sharp(finalBuffer).metadata();
+    return {
+      buffer: finalBuffer,
+      width: finalMeta.width,
+      height: finalMeta.height,
+      isEmpty: false
+    };
+  } catch (e) {
+    // trim() can fail if entire image is one color
+    return {
+      buffer: croppedBuffer,
+      width: cropW,
+      height: cropH,
+      isEmpty: false
+    };
+  }
 }
 
 // ============================================
