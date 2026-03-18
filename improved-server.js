@@ -404,4 +404,191 @@ app.post('/trim', upload.single('image'), async (req, res) => {
   finally { if(imagePath) await fs.unlink(imagePath).catch(()=>{}); }
 });
 
+
+
+// ============================================================
+// /split ENDPOINT - Add this to your improved-server.js
+// Splits horizontal images into 2 panels and auto-trims each
+// ============================================================
+
+
+// Add this route to your Express app:
+
+app.post('/split', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image uploaded' });
+    }
+
+    const threshold = parseInt(req.body.threshold) || 30;
+    const padding = parseInt(req.body.padding) || 10;
+    const skipEmpty = req.body.skipEmpty !== 'false'; // default true
+
+    const image = sharp(req.file.buffer);
+    const metadata = await image.metadata();
+    const { width, height } = metadata;
+
+    console.log(`[split] Input: ${width}x${height}`);
+
+    const mid = Math.floor(width / 2);
+
+    // Extract left and right panels
+    const leftBuffer = await sharp(req.file.buffer)
+      .extract({ left: 0, top: 0, width: mid, height })
+      .png()
+      .toBuffer();
+
+    const rightBuffer = await sharp(req.file.buffer)
+      .extract({ left: mid, top: 0, width: width - mid, height })
+      .png()
+      .toBuffer();
+
+    const panels = [];
+
+    for (const [idx, buffer] of [leftBuffer, rightBuffer].entries()) {
+      const panelName = idx === 0 ? 'left' : 'right';
+      const trimmed = await autoTrim(buffer, threshold, padding);
+
+      if (skipEmpty && trimmed.isEmpty) {
+        console.log(`[split] ${panelName} panel is empty/background only - skipping`);
+        continue;
+      }
+
+      panels.push({
+        name: panelName,
+        buffer: trimmed.buffer,
+        width: trimmed.width,
+        height: trimmed.height,
+        base64: trimmed.buffer.toString('base64')
+      });
+    }
+
+    // Return results
+    res.json({
+      success: true,
+      originalSize: { width, height },
+      panelCount: panels.length,
+      panels: panels.map(p => ({
+        name: p.name,
+        width: p.width,
+        height: p.height,
+        image: `data:image/png;base64,${p.base64}`
+      }))
+    });
+
+  } catch (err) {
+    console.error('[split] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Auto-trim: detects background color from corners, trims it
+async function autoTrim(buffer, threshold = 30, padding = 10) {
+  const image = sharp(buffer);
+  const meta = await image.metadata();
+  const { width, height, channels } = meta;
+
+  const raw = await image.raw().toBuffer();
+
+  // Sample corner pixels for background color
+  const getPixel = (x, y) => {
+    const idx = (y * width + x) * channels;
+    return [raw[idx], raw[idx + 1], raw[idx + 2]];
+  };
+
+  const corners = [
+    getPixel(0, 0),
+    getPixel(width - 1, 0),
+    getPixel(0, height - 1),
+    getPixel(width - 1, height - 1)
+  ];
+
+  // Median background color
+  const bg = [0, 1, 2].map(ch => {
+    const vals = corners.map(c => c[ch]).sort((a, b) => a - b);
+    return Math.round((vals[1] + vals[2]) / 2);
+  });
+
+  // Find bounding box of non-background pixels
+  let minX = width, minY = height, maxX = 0, maxY = 0;
+  let hasContent = false;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * channels;
+      const r = raw[idx], g = raw[idx + 1], b = raw[idx + 2];
+
+      const dist = Math.sqrt(
+        (r - bg[0]) ** 2 + (g - bg[1]) ** 2 + (b - bg[2]) ** 2
+      );
+
+      if (dist > threshold) {
+        hasContent = true;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (!hasContent) {
+    return { buffer, width, height, isEmpty: true };
+  }
+
+  // Apply padding
+  minX = Math.max(0, minX - padding);
+  minY = Math.max(0, minY - padding);
+  maxX = Math.min(width - 1, maxX + padding);
+  maxY = Math.min(height - 1, maxY + padding);
+
+  const cropW = maxX - minX + 1;
+  const cropH = maxY - minY + 1;
+
+  const trimmedBuffer = await sharp(buffer)
+    .extract({ left: minX, top: minY, width: cropW, height: cropH })
+    .png()
+    .toBuffer();
+
+  return {
+    buffer: trimmedBuffer,
+    width: cropW,
+    height: cropH,
+    isEmpty: false
+  };
+}
+
+// ============================================================
+// USAGE EXAMPLES:
+// ============================================================
+//
+// curl -X POST https://auto-crop.yerlikaya.cloud/split \
+//   -F "image=@two_panel_image.jpg" \
+//   -F "threshold=30" \
+//   -F "padding=10" \
+//   -F "skipEmpty=true"
+//
+// Response:
+// {
+//   "success": true,
+//   "originalSize": { "width": 1376, "height": 768 },
+//   "panelCount": 1,
+//   "panels": [
+//     {
+//       "name": "left",
+//       "width": 648,
+//       "height": 712,
+//       "image": "data:image/png;base64,..."
+//     }
+//   ]
+// }
+//
+// n8n Integration:
+// - HTTP Request node → POST /split with binary image
+// - Parse JSON response
+// - Each panel's base64 can be uploaded to R2/Etsy
+// ============================================================
+
+
+
 app.listen(PORT, () => console.log(`🚀 Yerlikaya Auto Crop v3.5 (Upscale Pipeline) on port ${PORT}`));
