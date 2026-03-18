@@ -709,7 +709,7 @@ app.post('/split', upload.single('image'), async (req, res) => {
         name: p.name,
         width: p.width,
         height: p.height,
-        image: `data:image/png;base64,${p.buffer.toString('base64')}`
+        image: p.buffer.toString('base64')
       }))
     });
     
