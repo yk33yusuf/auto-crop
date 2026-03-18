@@ -9,520 +9,410 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static('.'));
-app.use((req, res, next) => { req.setTimeout(300000); res.setTimeout(300000); next(); }); // 5 min for upscale
 
-const upload = multer({ dest: 'uploads/', limits: { fileSize: 50 * 1024 * 1024 } });
+// Timeout (3 min)
+app.use((req, res, next) => {
+  req.setTimeout(180000);
+  res.setTimeout(180000);
+  next();
+});
+
+const upload = multer({ 
+  dest: 'uploads/',
+  limits: { fileSize: 50 * 1024 * 1024 }
+});
+
 fs.mkdir('uploads', { recursive: true });
 
 // ============================================
-// COLOR SCIENCE
+// COLOR SCIENCE - CIE Lab
 // ============================================
-function srgbToLinear(c) { c = c / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+
+function srgbToLinear(c) {
+  c = c / 255;
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
 function linearRgbToXyz(r, g, b) {
-  return { x: r*0.4124564+g*0.3575761+b*0.1804375, y: r*0.2126729+g*0.7151522+b*0.0721750, z: r*0.0193339+g*0.1191920+b*0.9503041 };
+  return {
+    x: r * 0.4124564 + g * 0.3575761 + b * 0.1804375,
+    y: r * 0.2126729 + g * 0.7151522 + b * 0.0721750,
+    z: r * 0.0193339 + g * 0.1191920 + b * 0.9503041
+  };
 }
+
 function xyzToLab(x, y, z) {
-  const xn=0.95047,yn=1,zn=1.08883;
-  function f(t){return t>0.008856?Math.cbrt(t):(903.3*t+16)/116;}
-  return { L: 116*f(y/yn)-16, a: 500*(f(x/xn)-f(y/yn)), b: 200*(f(y/yn)-f(z/zn)) };
+  const xn = 0.95047, yn = 1.00000, zn = 1.08883;
+  function f(t) {
+    return t > 0.008856 ? Math.cbrt(t) : (903.3 * t + 16) / 116;
+  }
+  const fx = f(x / xn), fy = f(y / yn), fz = f(z / zn);
+  return {
+    L: 116 * fy - 16,
+    a: 500 * (fx - fy),
+    b: 200 * (fy - fz)
+  };
 }
-function rgbToLab(r,g,b) {
-  const lr=srgbToLinear(r),lg=srgbToLinear(g),lb=srgbToLinear(b);
-  const xyz=linearRgbToXyz(lr,lg,lb);
-  return xyzToLab(xyz.x,xyz.y,xyz.z);
+
+function rgbToLab(r, g, b) {
+  const lr = srgbToLinear(r), lg = srgbToLinear(g), lb = srgbToLinear(b);
+  const xyz = linearRgbToXyz(lr, lg, lb);
+  return xyzToLab(xyz.x, xyz.y, xyz.z);
 }
+
+// CIE76 Delta E
 const labCache = new Map();
-function rgbToLabCached(r,g,b) {
-  const k=(r<<16)|(g<<8)|b; let l=labCache.get(k);
-  if(!l){l=rgbToLab(r,g,b);if(labCache.size>500000)labCache.clear();labCache.set(k,l);} return l;
-}
-function deltaE76Fast(r,g,b,bgLab) {
-  const l=rgbToLabCached(r,g,b);
-  return Math.sqrt((l.L-bgLab.L)**2+(l.a-bgLab.a)**2+(l.b-bgLab.b)**2);
+function deltaE76Fast(r1, g1, b1, r2, g2, b2) {
+  const key1 = (r1 << 16) | (g1 << 8) | b1;
+  let lab1 = labCache.get(key1);
+  if (!lab1) { lab1 = rgbToLab(r1, g1, b1); labCache.set(key1, lab1); }
+  
+  const key2 = (r2 << 16) | (g2 << 8) | b2;
+  let lab2 = labCache.get(key2);
+  if (!lab2) { lab2 = rgbToLab(r2, g2, b2); labCache.set(key2, lab2); }
+  
+  return Math.sqrt(
+    (lab1.L - lab2.L) ** 2 +
+    (lab1.a - lab2.a) ** 2 +
+    (lab1.b - lab2.b) ** 2
+  );
 }
 
 // ============================================
 // BACKGROUND DETECTION
 // ============================================
+
 function detectBackgroundColor(data, width, height, channels) {
-  const samples = [];
-  const s = 10;
-  const areas = [
-    {x:0,y:0},{x:width-s,y:0},{x:0,y:height-s},{x:width-s,y:height-s},
-    {x:Math.floor(width/2)-5,y:0},{x:Math.floor(width/2)-5,y:height-s},
-    {x:0,y:Math.floor(height/2)-5},{x:width-s,y:Math.floor(height/2)-5}
-  ];
-  areas.forEach(a => {
-    for(let y=a.y;y<Math.min(a.y+s,height);y++)
-      for(let x=a.x;x<Math.min(a.x+s,width);x++){
-        const o=(y*width+x)*channels;
-        samples.push({r:data[o],g:data[o+1],b:data[o+2]});
-      }
-  });
-  const cc = new Map();
-  samples.forEach(c => {
-    const k=`${Math.floor(c.r/5)*5}-${Math.floor(c.g/5)*5}-${Math.floor(c.b/5)*5}`;
-    if(!cc.has(k)) cc.set(k,{n:0,r:0,g:0,b:0});
-    const e=cc.get(k); e.n++; e.r+=c.r; e.g+=c.g; e.b+=c.b;
-  });
-  let mx=0, dom={r:255,g:255,b:255};
-  for(const [,e] of cc) if(e.n>mx){mx=e.n;dom={r:Math.round(e.r/e.n),g:Math.round(e.g/e.n),b:Math.round(e.b/e.n)};}
-  return dom;
+  const edgePixels = [];
+  const sampleStep = Math.max(1, Math.floor(Math.min(width, height) / 100));
+  
+  for (let x = 0; x < width; x += sampleStep) {
+    edgePixels.push(getPixelAt(data, x, 0, width, channels));
+    edgePixels.push(getPixelAt(data, x, height - 1, width, channels));
+  }
+  for (let y = 0; y < height; y += sampleStep) {
+    edgePixels.push(getPixelAt(data, 0, y, width, channels));
+    edgePixels.push(getPixelAt(data, width - 1, y, width, channels));
+  }
+  
+  // Cluster edge pixels - most common color
+  const colorMap = new Map();
+  for (const px of edgePixels) {
+    const qr = Math.round(px.r / 8) * 8;
+    const qg = Math.round(px.g / 8) * 8;
+    const qb = Math.round(px.b / 8) * 8;
+    const key = `${qr},${qg},${qb}`;
+    if (!colorMap.has(key)) colorMap.set(key, { r: 0, g: 0, b: 0, count: 0 });
+    const entry = colorMap.get(key);
+    entry.r += px.r; entry.g += px.g; entry.b += px.b; entry.count++;
+  }
+  
+  let maxCount = 0, bestCluster = null;
+  for (const entry of colorMap.values()) {
+    if (entry.count > maxCount) {
+      maxCount = entry.count;
+      bestCluster = entry;
+    }
+  }
+  
+  return {
+    r: Math.round(bestCluster.r / bestCluster.count),
+    g: Math.round(bestCluster.g / bestCluster.count),
+    b: Math.round(bestCluster.b / bestCluster.count)
+  };
+}
+
+function getPixelAt(data, x, y, width, channels) {
+  const idx = (y * width + x) * channels;
+  return { r: data[idx], g: data[idx + 1], b: data[idx + 2] };
 }
 
 // ============================================
-// 5-PHASE BACKGROUND REMOVAL
+// FLOOD-FILL BACKGROUND REMOVAL
 // ============================================
-const dx8=[-1,1,0,0,-1,-1,1,1], dy8=[0,0,-1,1,-1,1,-1,1];
 
-function advancedBackgroundRemoval(data, width, height, channels, bgColor, threshold, minIslandSize) {
-  const result = Buffer.from(data);
+function floodFillBackground(data, width, height, channels, bgColor, threshold) {
+  const totalPixels = width * height;
+  const mask = new Uint8Array(totalPixels); // 0=unknown, 1=background, 2=foreground
+  
   const bgLab = rgbToLab(bgColor.r, bgColor.g, bgColor.b);
-  const tp = width * height;
   
-  const labTh = Math.max(threshold * 0.8, 2);
-  const transTh = labTh * 1.3;
+  // BFS queue - start from all edge pixels
+  const queue = [];
   
-  console.log(`🌊 labTh=${labTh.toFixed(1)}, transTh=${transTh.toFixed(1)}`);
-  
-  // Pre-compute deltaE
-  const dem = new Float32Array(tp);
-  for (let i = 0; i < tp; i++) {
-    const o = i * channels;
-    dem[i] = deltaE76Fast(data[o], data[o+1], data[o+2], bgLab);
-  }
-  
-  const mask = new Uint8Array(tp);
-  
-  // === PHASE 1: Edge flood-fill ===
-  const queue = new Int32Array(tp);
-  let qH = 0, qT = 0;
-  
+  // Add edge pixels to queue
   for (let x = 0; x < width; x++) {
-    for (const y of [0, height-1]) {
-      const i = y*width+x; if(mask[i]) continue;
-      if (dem[i] <= labTh) { mask[i]=1; queue[qT++]=i; }
-      else if (dem[i] <= transTh) mask[i]=2;
-    }
+    queue.push(x); // top row
+    queue.push((height - 1) * width + x); // bottom row
   }
-  for (let y = 0; y < height; y++) {
-    for (const x of [0, width-1]) {
-      const i = y*width+x; if(mask[i]) continue;
-      if (dem[i] <= labTh) { mask[i]=1; queue[qT++]=i; }
-      else if (dem[i] <= transTh) mask[i]=2;
-    }
+  for (let y = 1; y < height - 1; y++) {
+    queue.push(y * width); // left col
+    queue.push(y * width + width - 1); // right col
   }
   
-  while (qH < qT) {
-    const ci = queue[qH++];
-    const cx = ci % width, cy = (ci-cx) / width;
-    for (let d = 0; d < 8; d++) {
-      const nx = cx+dx8[d], ny = cy+dy8[d];
-      if (nx<0||nx>=width||ny<0||ny>=height) continue;
-      const ni = ny*width+nx;
-      if (mask[ni]) continue;
-      if (dem[ni] <= labTh) { mask[ni]=1; queue[qT++]=ni; }
-      else if (dem[ni] <= transTh) mask[ni]=2;
-      else mask[ni]=3;
+  // Mark edge pixels that match bg
+  const initialQueue = [];
+  for (const pixelIdx of queue) {
+    const dataIdx = pixelIdx * channels;
+    const r = data[dataIdx], g = data[dataIdx + 1], b = data[dataIdx + 2];
+    const dist = deltaE76Fast(r, g, b, bgColor.r, bgColor.g, bgColor.b);
+    
+    if (dist <= threshold) {
+      mask[pixelIdx] = 1;
+      initialQueue.push(pixelIdx);
     }
   }
-  for (let i=0; i<tp; i++) if(!mask[i]) mask[i]=3;
   
-  let p1=0; for(let i=0;i<tp;i++) if(mask[i]===1) p1++;
-  console.log(`🌊 Phase 1 (flood): ${p1} bg`);
+  // BFS flood fill
+  let head = 0;
+  const bfsQueue = initialQueue;
+  const dx = [-1, 1, 0, 0];
+  const dy = [0, 0, -1, 1];
   
-  // === PHASE 2: Interior islands ===
-  const vis = new Uint8Array(tp);
-  let islandPx = 0, islandN = 0;
-  
-  for (let i = 0; i < tp; i++) {
-    if (mask[i]!==3 || vis[i] || dem[i]>labTh) continue;
-    const rg=[]; const rq=[i]; vis[i]=1; let rh=0;
-    while (rh < rq.length) {
-      const ci=rq[rh++]; rg.push(ci);
-      const cx=ci%width, cy=(ci-cx)/width;
-      for(let d=0;d<8;d++){
-        const nx=cx+dx8[d],ny=cy+dy8[d];
-        if(nx<0||nx>=width||ny<0||ny>=height)continue;
-        const ni=ny*width+nx;
-        if(vis[ni]||mask[ni]!==3||dem[ni]>labTh)continue;
-        vis[ni]=1; rq.push(ni);
+  while (head < bfsQueue.length) {
+    const idx = bfsQueue[head++];
+    const x = idx % width;
+    const y = Math.floor(idx / width);
+    
+    for (let d = 0; d < 4; d++) {
+      const nx = x + dx[d];
+      const ny = y + dy[d];
+      
+      if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+      
+      const nIdx = ny * width + nx;
+      if (mask[nIdx] !== 0) continue;
+      
+      const nDataIdx = nIdx * channels;
+      const r = data[nDataIdx], g = data[nDataIdx + 1], b = data[nDataIdx + 2];
+      const dist = deltaE76Fast(r, g, b, bgColor.r, bgColor.g, bgColor.b);
+      
+      if (dist <= threshold) {
+        mask[nIdx] = 1;
+        bfsQueue.push(nIdx);
       }
     }
-    if (rg.length >= minIslandSize) {
-      islandN++;
-      for(const idx of rg) { mask[idx]=1; islandPx++; }
-      for(const idx of rg) {
-        const cx=idx%width,cy=(idx-cx)/width;
-        for(let d=0;d<8;d++){
-          const nx=cx+dx8[d],ny=cy+dy8[d];
-          if(nx<0||nx>=width||ny<0||ny>=height)continue;
-          const ni=ny*width+nx;
-          if(mask[ni]===3&&dem[ni]<=transTh) mask[ni]=2;
+  }
+  
+  return mask;
+}
+
+// Interior island detection
+function removeInteriorIslands(data, mask, width, height, channels, bgColor, threshold, minIslandSize) {
+  const totalPixels = width * height;
+  const visited = new Uint8Array(totalPixels);
+  let removed = 0;
+  
+  for (let i = 0; i < totalPixels; i++) {
+    if (mask[i] !== 0 || visited[i]) continue;
+    
+    const dataIdx = i * channels;
+    const r = data[dataIdx], g = data[dataIdx + 1], b = data[dataIdx + 2];
+    const dist = deltaE76Fast(r, g, b, bgColor.r, bgColor.g, bgColor.b);
+    
+    if (dist > threshold) {
+      visited[i] = 1;
+      continue;
+    }
+    
+    // BFS to find connected region of bg-colored unmasked pixels
+    const region = [i];
+    const regionQueue = [i];
+    visited[i] = 1;
+    let head = 0;
+    
+    while (head < regionQueue.length) {
+      const idx = regionQueue[head++];
+      const x = idx % width;
+      const y = Math.floor(idx / width);
+      
+      const neighbors = [
+        y > 0 ? idx - width : -1,
+        y < height - 1 ? idx + width : -1,
+        x > 0 ? idx - 1 : -1,
+        x < width - 1 ? idx + 1 : -1
+      ];
+      
+      for (const nIdx of neighbors) {
+        if (nIdx < 0 || visited[nIdx] || mask[nIdx] !== 0) continue;
+        
+        const nDataIdx = nIdx * channels;
+        const nr = data[nDataIdx], ng = data[nDataIdx + 1], nb = data[nDataIdx + 2];
+        const nDist = deltaE76Fast(nr, ng, nb, bgColor.r, bgColor.g, bgColor.b);
+        
+        if (nDist <= threshold * 1.2) {
+          visited[nIdx] = 1;
+          region.push(nIdx);
+          regionQueue.push(nIdx);
+        } else {
+          visited[nIdx] = 1;
         }
       }
     }
-  }
-  console.log(`🏝️ Phase 2 (islands): ${islandN} found, ${islandPx} px`);
-  
-  // === PHASE 3: Transition refinement ===
-  let prom=0, dem2=0;
-  for(let y=1;y<height-1;y++) for(let x=1;x<width-1;x++) {
-    const i=y*width+x; if(mask[i]!==2)continue;
-    let fg=0,bg=0;
-    for(let d=0;d<8;d++){const nm=mask[(y+dy8[d])*width+(x+dx8[d])];if(nm===3)fg++;else if(nm===1)bg++;}
-    if(fg>bg&&fg>=3){mask[i]=3;prom++;}
-    else if(bg>=5){mask[i]=1;dem2++;}
-  }
-  console.log(`🔄 Phase 3 (refine): +${prom} fg, +${dem2} bg`);
-  
-  // === PHASE 4: Boundary cleanup ===
-  let bcTotal = 0;
-  for (let pass = 0; pass < 5; pass++) {
-    let pc = 0;
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const i = y*width+x;
-        if (mask[i] !== 3 && mask[i] !== 2) continue;
-        
-        let touchesBg = false;
-        for (let d = 0; d < 8 && !touchesBg; d++) {
-          const nx=x+dx8[d], ny=y+dy8[d];
-          if (nx<0||nx>=width||ny<0||ny>=height) touchesBg=true;
-          else if (mask[ny*width+nx] === 1) touchesBg = true;
-        }
-        if (!touchesBg) continue;
-        
-        const d = dem[i];
-        if (d <= labTh * 1.5) { mask[i]=1; pc++; }
-        else if (d <= labTh * 2.2) { mask[i]=2; pc++; }
+    
+    if (region.length >= minIslandSize) {
+      for (const idx of region) {
+        mask[idx] = 1;
+        removed++;
       }
     }
-    bcTotal += pc;
-    if (pc === 0) break;
   }
-  console.log(`🧹 Phase 4 (boundary): ${bcTotal} px`);
   
-  // === PHASE 5: Apply mask ===
-  let fBg=0, fTr=0, fFg=0;
-  for (let i = 0; i < tp; i++) {
-    const o = i * channels;
-    if (mask[i] === 1) { result[o+3]=0; fBg++; }
-    else if (mask[i] === 2) {
-      const ratio = (dem[i]-labTh) / (transTh-labTh);
-      result[o+3] = Math.floor(Math.max(0, Math.min(255, ratio*255)));
-      fTr++;
-    } else { fFg++; }
-  }
-  console.log(`✅ bg=${fBg}, trans=${fTr}, fg=${fFg}`);
-  
-  return { result, mask };
+  return removed;
 }
 
 // ============================================
 // POST-PROCESSING
 // ============================================
-function smartErosion(data, w, h, ch, mask, r) {
-  const res = Buffer.from(data); const toE=[];
-  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
-    const i=y*w+x; if(res[i*ch+3]===0)continue;
-    let tb=false;
-    for(let ky=-r;ky<=r&&!tb;ky++) for(let kx=-r;kx<=r&&!tb;kx++){
-      if(!kx&&!ky)continue;
-      const ny=y+ky,nx=x+kx;
-      if(ny<0||ny>=h||nx<0||nx>=w)tb=true;
-      else if(mask[ny*w+nx]===1)tb=true;
-    }
-    if(tb) toE.push(i);
-  }
-  for(const i of toE){res[i*ch+3]=0;mask[i]=1;}
-  console.log(`🔧 Erosion: ${toE.length} px`);
-  return res;
-}
 
-function smartDecontamination(data, w, h, ch, mask, bg) {
-  const res=Buffer.from(data); let n=0;
-  for(let i=0;i<w*h;i++){
-    const o=i*ch; const a=res[o+3];
-    if(a===0||a===255||mask[i]!==2)continue;
-    const af=a/255; if(af<0.1){res[o+3]=0;continue;}
-    res[o]=Math.max(0,Math.min(255,Math.round((res[o]-bg.r*(1-af))/af)));
-    res[o+1]=Math.max(0,Math.min(255,Math.round((res[o+1]-bg.g*(1-af))/af)));
-    res[o+2]=Math.max(0,Math.min(255,Math.round((res[o+2]-bg.b*(1-af))/af)));
-    n++;
-  }
-  console.log(`🧪 Decontam: ${n} px`);
-  return res;
-}
-
-function smartEdgeSoftening(data, w, h, ch, mask, r=1) {
-  const res=Buffer.from(data);
-  for(let y=r;y<h-r;y++) for(let x=r;x<w-r;x++){
-    const i=y*w+x,o=i*ch; if(data[o+3]===0)continue;
-    let isE=false;
-    for(let ky=-1;ky<=1&&!isE;ky++) for(let kx=-1;kx<=1&&!isE;kx++){
-      if(!kx&&!ky)continue; if(mask[(y+ky)*w+(x+kx)]===1) isE=true;
-    }
-    if(!isE) continue;
-    let tA=0,tW=0;
-    for(let ky=-r;ky<=r;ky++) for(let kx=-r;kx<=r;kx++){
-      const ny=y+ky,nx=x+kx; if(ny<0||ny>=h||nx<0||nx>=w)continue;
-      const d=Math.sqrt(kx*kx+ky*ky), wt=Math.exp(-(d*d)/(2*0.8*0.8));
-      tA+=data[(ny*w+nx)*ch+3]*wt; tW+=wt;
-    }
-    res[o+3]=Math.round(tA/tW);
-  }
-  return res;
-}
-
-// ============================================
-// ENDPOINTS
-// ============================================
-app.get('/', (req, res) => {
-  res.json({ status:'ok', service:'Yerlikaya Auto Crop API', version:'3.5.0',
-    features:['Upscale pipeline (2x-4x)','Flood-fill + island removal','Boundary cleanup','CIE Lab','Smart post-processing'] });
-});
-
-app.post('/crop', upload.single('image'), async (req, res) => {
-  let imagePath;
-  try {
-    const f = req.file;
-    if(!f) return res.status(400).json({error:'Image file required'});
-    if(f.size>20*1024*1024){await fs.unlink(f.path);return res.status(400).json({error:'File too large'});}
-    
-    imagePath = f.path;
-    const threshold = parseInt(req.body.threshold)||15;
-    const erosionRadius = parseInt(req.body.erosion)||1;
-    const decontaminate = req.body.decontaminate!=='false';
-    const softenEdges = req.body.softenEdges!=='false';
-    const minIslandSize = parseInt(req.body.minIsland)||100;
-    const upscaleFactor = parseInt(req.body.upscale)||2; // 1=off, 2=2x, 3=3x, 4=4x
-    
-    console.log('='.repeat(60));
-    console.log(`🔍 v3.5 | th:${threshold} ero:${erosionRadius} island:${minIslandSize} upscale:${upscaleFactor}x`);
-    
-    // Load original
-    const originalMeta = await sharp(imagePath).metadata();
-    const origW = originalMeta.width;
-    const origH = originalMeta.height;
-    console.log(`📐 Original: ${origW}x${origH}`);
-    
-    // === STEP 1: Detect background on original ===
-    const {data: origData, info: origInfo} = await sharp(imagePath).ensureAlpha().raw().toBuffer({resolveWithObject:true});
-    const bgColor = detectBackgroundColor(origData, origInfo.width, origInfo.height, origInfo.channels);
-    console.log('🎨 BG:', bgColor);
-    
-    // === STEP 2: Upscale ===
-    let workBuffer;
-    if (upscaleFactor > 1) {
-      const upW = origW * upscaleFactor;
-      const upH = origH * upscaleFactor;
-      console.log(`🔎 Upscaling ${upscaleFactor}x → ${upW}x${upH}`);
-      workBuffer = await sharp(imagePath)
-        .resize(upW, upH, { kernel: 'lanczos3', fit: 'fill' })
-        .toBuffer();
-    } else {
-      workBuffer = await sharp(imagePath).toBuffer();
-    }
-    
-    // === STEP 3: Trim on upscaled ===
-    console.log('✂️ Trimming...');
-    const trimmedBuffer = await sharp(workBuffer)
-      .trim({ background: bgColor, threshold })
-      .toBuffer();
-    
-    // Get trimmed dimensions for downscale ratio
-    const trimMeta = await sharp(trimmedBuffer).metadata();
-    
-    const {data: cd, info: ci} = await sharp(trimmedBuffer)
-      .ensureAlpha().raw().toBuffer({resolveWithObject:true});
-    console.log(`📐 Work size: ${ci.width}x${ci.height}`);
-    
-    const t0 = Date.now();
-    
-    // === STEP 4: Background removal on upscaled ===
-    // Scale island size with upscale factor
-    const scaledIslandSize = minIslandSize * upscaleFactor * upscaleFactor;
-    
-    let {result: processed, mask} = advancedBackgroundRemoval(
-      cd, ci.width, ci.height, ci.channels, bgColor, threshold, scaledIslandSize
-    );
-    
-    console.log(`⏱️ Removal: ${Date.now()-t0}ms`);
-    
-    // === STEP 5: Post-processing on upscaled ===
-    if (erosionRadius > 0) {
-      for (let i = 0; i < erosionRadius; i++)
-        processed = smartErosion(processed, ci.width, ci.height, ci.channels, mask, 1);
-    }
-    if (decontaminate)
-      processed = smartDecontamination(processed, ci.width, ci.height, ci.channels, mask, bgColor);
-    if (softenEdges)
-      processed = smartEdgeSoftening(processed, ci.width, ci.height, ci.channels, mask);
-    
-    labCache.clear();
-    
-    // === STEP 6: Create PNG from processed pixels ===
-    let finalBuffer = await sharp(processed, {
-      raw: { width: ci.width, height: ci.height, channels: ci.channels }
-    }).png({ compressionLevel: 6, adaptiveFiltering: true }).toBuffer();
-    
-    // === STEP 7: Downscale back to original proportions ===
-    if (upscaleFactor > 1) {
-      // Calculate target size: trimmed size / upscale factor
-      const targetW = Math.round(ci.width / upscaleFactor);
-      const targetH = Math.round(ci.height / upscaleFactor);
-      console.log(`🔽 Downscaling → ${targetW}x${targetH}`);
+function findEdgePixels(mask, width, height) {
+  const edges = new Set();
+  
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      if (mask[idx] !== 1) continue; // not bg
       
-      finalBuffer = await sharp(finalBuffer)
-        .resize(targetW, targetH, { kernel: 'lanczos3', fit: 'fill' })
-        .png({ compressionLevel: 6, adaptiveFiltering: true })
-        .toBuffer();
+      const neighbors = [
+        y > 0 ? idx - width : -1,
+        y < height - 1 ? idx + width : -1,
+        x > 0 ? idx - 1 : -1,
+        x < width - 1 ? idx + 1 : -1
+      ];
+      
+      for (const nIdx of neighbors) {
+        if (nIdx >= 0 && mask[nIdx] === 0) {
+          edges.add(nIdx);
+        }
+      }
     }
-    
-    console.log(`✅ ${(finalBuffer.length/1024).toFixed(0)}KB in ${Date.now()-t0}ms`);
-    console.log('='.repeat(60));
-    
-    res.set({'Content-Type':'image/png','Content-Disposition':`attachment; filename="cropped-${Date.now()}.png"`});
-    res.send(finalBuffer);
-    
-  } catch(e) {
-    console.error('❌',e); labCache.clear();
-    res.status(500).json({error:'Failed',details:e.message});
-  } finally { if(imagePath) await fs.unlink(imagePath).catch(()=>{}); }
-});
+  }
+  
+  return edges;
+}
 
-app.post('/trim', upload.single('image'), async (req, res) => {
-  let imagePath;
-  try {
-    const f=req.file; if(!f) return res.status(400).json({error:'Image required'});
-    imagePath=f.path;
-    const buf = await sharp(imagePath).trim({threshold:parseInt(req.body.threshold)||10}).png().toBuffer();
-    res.set({'Content-Type':'image/png','Content-Disposition':`attachment; filename="trimmed-${Date.now()}.png"`});
-    res.send(buf);
-  } catch(e) { res.status(500).json({error:'Failed',details:e.message}); }
-  finally { if(imagePath) await fs.unlink(imagePath).catch(()=>{}); }
-});
-
-
-
-// ============================================================
-// /split ENDPOINT - Add this to your improved-server.js
-// Splits horizontal images into 2 panels and auto-trims each
-// ============================================================
-
-
-// Add this route to your Express app:
-
-app.post('/split', upload.single('image'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No image uploaded' });
-    }
-
-    const threshold = parseInt(req.body.threshold) || 30;
-    const padding = parseInt(req.body.padding) || 10;
-    const skipEmpty = req.body.skipEmpty !== 'false'; // default true
-
-    const image = sharp(req.file.buffer);
-    const metadata = await image.metadata();
-    const { width, height } = metadata;
-
-    console.log(`[split] Input: ${width}x${height}`);
-
-    const mid = Math.floor(width / 2);
-
-    // Extract left and right panels
-    const leftBuffer = await sharp(req.file.buffer)
-      .extract({ left: 0, top: 0, width: mid, height })
-      .png()
-      .toBuffer();
-
-    const rightBuffer = await sharp(req.file.buffer)
-      .extract({ left: mid, top: 0, width: width - mid, height })
-      .png()
-      .toBuffer();
-
-    const panels = [];
-
-    for (const [idx, buffer] of [leftBuffer, rightBuffer].entries()) {
-      const panelName = idx === 0 ? 'left' : 'right';
-      const trimmed = await autoTrim(buffer, threshold, padding);
-
-      if (skipEmpty && trimmed.isEmpty) {
-        console.log(`[split] ${panelName} panel is empty/background only - skipping`);
+function applyTransitionZone(data, mask, width, height, channels, bgColor, threshold, edgePixels) {
+  const result = Buffer.from(data);
+  
+  // Ensure alpha channel
+  const hasAlpha = channels >= 4;
+  
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      const dataIdx = idx * channels;
+      
+      if (mask[idx] === 1) {
+        // Background - make transparent
+        if (hasAlpha) {
+          result[dataIdx + 3] = 0;
+        }
         continue;
       }
-
-      panels.push({
-        name: panelName,
-        buffer: trimmed.buffer,
-        width: trimmed.width,
-        height: trimmed.height,
-        base64: trimmed.buffer.toString('base64')
-      });
+      
+      // Edge pixel - apply transition
+      if (edgePixels.has(idx)) {
+        const r = data[dataIdx], g = data[dataIdx + 1], b = data[dataIdx + 2];
+        const dist = deltaE76Fast(r, g, b, bgColor.r, bgColor.g, bgColor.b);
+        
+        if (dist < threshold * 1.5) {
+          // Transition zone
+          const alpha = Math.min(255, Math.round((dist / (threshold * 1.5)) * 255));
+          
+          // Check if foreground neighbors dominate
+          let fgCount = 0, bgCount = 0;
+          const nx = [x-1, x+1, x, x, x-1, x+1, x-1, x+1];
+          const ny = [y, y, y-1, y+1, y-1, y-1, y+1, y+1];
+          
+          for (let d = 0; d < 8; d++) {
+            if (nx[d] >= 0 && nx[d] < width && ny[d] >= 0 && ny[d] < height) {
+              const nMask = mask[ny[d] * width + nx[d]];
+              if (nMask === 1) bgCount++;
+              else fgCount++;
+            }
+          }
+          
+          // If mostly foreground neighbors, keep more opaque
+          if (fgCount > bgCount * 2) {
+            if (hasAlpha) result[dataIdx + 3] = 255;
+          } else {
+            if (hasAlpha) result[dataIdx + 3] = Math.max(alpha, 30);
+          }
+        }
+      }
     }
-
-    // Return results
-    res.json({
-      success: true,
-      originalSize: { width, height },
-      panelCount: panels.length,
-      panels: panels.map(p => ({
-        name: p.name,
-        width: p.width,
-        height: p.height,
-        image: `data:image/png;base64,${p.base64}`
-      }))
-    });
-
-  } catch (err) {
-    console.error('[split] Error:', err);
-    res.status(500).json({ error: err.message });
   }
-});
+  
+  return result;
+}
 
-// Auto-trim: detects background color from corners, trims it
-async function autoTrim(buffer, threshold = 30, padding = 10) {
+function colorDecontaminate(data, mask, width, height, channels, bgColor, edgePixels) {
+  if (channels < 4) return data;
+  
+  const result = Buffer.from(data);
+  
+  for (const idx of edgePixels) {
+    const dataIdx = idx * channels;
+    const alpha = result[dataIdx + 3];
+    
+    if (alpha === 0 || alpha === 255) continue;
+    
+    const a = alpha / 255;
+    const r = result[dataIdx], g = result[dataIdx + 1], b = result[dataIdx + 2];
+    
+    // Un-premultiply background contamination
+    result[dataIdx]     = Math.min(255, Math.max(0, Math.round((r - bgColor.r * (1 - a)) / a)));
+    result[dataIdx + 1] = Math.min(255, Math.max(0, Math.round((g - bgColor.g * (1 - a)) / a)));
+    result[dataIdx + 2] = Math.min(255, Math.max(0, Math.round((b - bgColor.b * (1 - a)) / a)));
+  }
+  
+  return result;
+}
+
+// ============================================
+// SPLIT HELPERS
+// ============================================
+
+async function detectAndTrimPanel(buffer, trimThreshold, trimPadding) {
   const image = sharp(buffer);
   const meta = await image.metadata();
   const { width, height, channels } = meta;
-
+  
   const raw = await image.raw().toBuffer();
-
+  
   // Sample corner pixels for background color
   const getPixel = (x, y) => {
     const idx = (y * width + x) * channels;
     return [raw[idx], raw[idx + 1], raw[idx + 2]];
   };
-
+  
   const corners = [
     getPixel(0, 0),
     getPixel(width - 1, 0),
     getPixel(0, height - 1),
     getPixel(width - 1, height - 1)
   ];
-
+  
   // Median background color
   const bg = [0, 1, 2].map(ch => {
     const vals = corners.map(c => c[ch]).sort((a, b) => a - b);
     return Math.round((vals[1] + vals[2]) / 2);
   });
-
+  
   // Find bounding box of non-background pixels
   let minX = width, minY = height, maxX = 0, maxY = 0;
   let hasContent = false;
-
+  
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const idx = (y * width + x) * channels;
       const r = raw[idx], g = raw[idx + 1], b = raw[idx + 2];
-
+      
       const dist = Math.sqrt(
         (r - bg[0]) ** 2 + (g - bg[1]) ** 2 + (b - bg[2]) ** 2
       );
-
-      if (dist > threshold) {
+      
+      if (dist > trimThreshold) {
         hasContent = true;
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
@@ -531,25 +421,25 @@ async function autoTrim(buffer, threshold = 30, padding = 10) {
       }
     }
   }
-
+  
   if (!hasContent) {
     return { buffer, width, height, isEmpty: true };
   }
-
+  
   // Apply padding
-  minX = Math.max(0, minX - padding);
-  minY = Math.max(0, minY - padding);
-  maxX = Math.min(width - 1, maxX + padding);
-  maxY = Math.min(height - 1, maxY + padding);
-
+  minX = Math.max(0, minX - trimPadding);
+  minY = Math.max(0, minY - trimPadding);
+  maxX = Math.min(width - 1, maxX + trimPadding);
+  maxY = Math.min(height - 1, maxY + trimPadding);
+  
   const cropW = maxX - minX + 1;
   const cropH = maxY - minY + 1;
-
+  
   const trimmedBuffer = await sharp(buffer)
     .extract({ left: minX, top: minY, width: cropW, height: cropH })
     .png()
     .toBuffer();
-
+  
   return {
     buffer: trimmedBuffer,
     width: cropW,
@@ -558,37 +448,284 @@ async function autoTrim(buffer, threshold = 30, padding = 10) {
   };
 }
 
-// ============================================================
-// USAGE EXAMPLES:
-// ============================================================
-//
-// curl -X POST https://auto-crop.yerlikaya.cloud/split \
-//   -F "image=@two_panel_image.jpg" \
-//   -F "threshold=30" \
-//   -F "padding=10" \
-//   -F "skipEmpty=true"
-//
-// Response:
-// {
-//   "success": true,
-//   "originalSize": { "width": 1376, "height": 768 },
-//   "panelCount": 1,
-//   "panels": [
-//     {
-//       "name": "left",
-//       "width": 648,
-//       "height": 712,
-//       "image": "data:image/png;base64,..."
-//     }
-//   ]
-// }
-//
-// n8n Integration:
-// - HTTP Request node → POST /split with binary image
-// - Parse JSON response
-// - Each panel's base64 can be uploaded to R2/Etsy
-// ============================================================
+// ============================================
+// HEALTH CHECK
+// ============================================
 
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    service: 'Yerlikaya Auto Crop API',
+    version: '3.2.0',
+    endpoints: {
+      crop: 'POST /crop - Background removal + auto crop (flood-fill)',
+      trim: 'POST /trim - Simple whitespace trim',
+      split: 'POST /split - Split horizontal image into panels + auto trim'
+    }
+  });
+});
 
+// ============================================
+// /crop - FLOOD-FILL BACKGROUND REMOVAL + CROP
+// ============================================
 
-app.listen(PORT, () => console.log(`🚀 Yerlikaya Auto Crop v3.5 (Upscale Pipeline) on port ${PORT}`));
+app.post('/crop', upload.single('image'), async (req, res) => {
+  let imagePath;
+  
+  try {
+    const imageFile = req.file;
+    if (!imageFile) return res.status(400).json({ error: 'Image file required' });
+    
+    imagePath = imageFile.path;
+    const startTime = Date.now();
+    
+    // Parameters
+    const threshold = parseFloat(req.body.threshold) || 15;
+    const enableErosion = req.body.erosion !== 'false';
+    const erosionRadius = parseInt(req.body.erosionRadius) || 1;
+    const enableDecontamination = req.body.decontamination !== 'false';
+    const enableSoftening = req.body.softening !== 'false';
+    const minIslandSize = parseInt(req.body.minIslandSize) || 100;
+    
+    console.log('='.repeat(60));
+    console.log(`🔍 v3.2 Flood-Fill Processing`);
+    console.log(`📊 Threshold: ${threshold}, Erosion: ${enableErosion}(${erosionRadius}px)`);
+    console.log(`🎨 Decontamination: ${enableDecontamination}, Softening: ${enableSoftening}`);
+    
+    // Load image with alpha
+    const image = sharp(imagePath).ensureAlpha();
+    const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
+    const { width, height, channels } = info;
+    
+    console.log(`📏 Size: ${width}x${height}, channels: ${channels}`);
+    
+    // Step 1: Detect background
+    const bgColor = detectBackgroundColor(data, width, height, channels);
+    console.log(`🎨 Background: rgb(${bgColor.r}, ${bgColor.g}, ${bgColor.b})`);
+    
+    // Step 2: Flood-fill from edges
+    const mask = floodFillBackground(data, width, height, channels, bgColor, threshold);
+    
+    let bgCount = 0;
+    for (let i = 0; i < mask.length; i++) if (mask[i] === 1) bgCount++;
+    console.log(`🌊 Flood-fill: ${bgCount} bg pixels (${(bgCount / mask.length * 100).toFixed(1)}%)`);
+    
+    // Step 3: Interior islands
+    const removed = removeInteriorIslands(data, mask, width, height, channels, bgColor, threshold * 1.2, minIslandSize);
+    if (removed > 0) console.log(`🏝️ Interior islands removed: ${removed} pixels`);
+    
+    // Step 4: Find edge pixels
+    const edgePixels = findEdgePixels(mask, width, height);
+    console.log(`🔲 Edge pixels: ${edgePixels.size}`);
+    
+    // Step 5: Apply transition zone + transparency
+    let processedData = applyTransitionZone(data, mask, width, height, channels, bgColor, threshold, edgePixels);
+    
+    // Step 6: Color decontamination
+    if (enableDecontamination) {
+      processedData = colorDecontaminate(processedData, mask, width, height, channels, bgColor, edgePixels);
+    }
+    
+    // Step 7: Morphological erosion on alpha
+    if (enableErosion) {
+      for (let pass = 0; pass < erosionRadius; pass++) {
+        const eroded = Buffer.from(processedData);
+        for (const idx of edgePixels) {
+          const x = idx % width;
+          const y = Math.floor(idx / width);
+          const dataIdx = idx * channels;
+          
+          // Check 3x3 neighborhood
+          let minAlpha = 255;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const nx = x + dx, ny = y + dy;
+              if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                const nDataIdx = (ny * width + nx) * channels;
+                minAlpha = Math.min(minAlpha, processedData[nDataIdx + 3]);
+              }
+            }
+          }
+          eroded[dataIdx + 3] = minAlpha;
+        }
+        processedData = eroded;
+      }
+    }
+    
+    // Step 8: Crop to content
+    labCache.clear();
+    
+    const result = await sharp(processedData, {
+      raw: { width, height, channels }
+    })
+    .trim()
+    .png({ compressionLevel: 6, adaptiveFiltering: true })
+    .toBuffer();
+    
+    console.log(`✅ Done: ${(result.length / 1024).toFixed(0)}KB, ${Date.now() - startTime}ms`);
+    console.log('='.repeat(60));
+    
+    res.set({
+      'Content-Type': 'image/png',
+      'Content-Disposition': `attachment; filename="cropped-${Date.now()}.png"`
+    });
+    res.send(result);
+    
+  } catch (error) {
+    console.error('❌ Error:', error);
+    labCache.clear();
+    res.status(500).json({ error: 'Failed to process image', details: error.message });
+  } finally {
+    if (imagePath) await fs.unlink(imagePath).catch(() => {});
+  }
+});
+
+// ============================================
+// /trim - SIMPLE WHITESPACE TRIM
+// ============================================
+
+app.post('/trim', upload.single('image'), async (req, res) => {
+  let imagePath;
+  try {
+    const imageFile = req.file;
+    if (!imageFile) return res.status(400).json({ error: 'Image file required' });
+    
+    imagePath = imageFile.path;
+    const threshold = parseInt(req.body.threshold) || 10;
+    
+    console.log('✂️ Trim-only, threshold:', threshold);
+    
+    const trimmedBuffer = await sharp(imagePath)
+      .trim({ threshold })
+      .png()
+      .toBuffer();
+    
+    res.set({
+      'Content-Type': 'image/png',
+      'Content-Disposition': `attachment; filename="trimmed-${Date.now()}.png"`
+    });
+    res.send(trimmedBuffer);
+  } catch (error) {
+    console.error('❌ Trim Error:', error);
+    res.status(500).json({ error: 'Failed to trim', details: error.message });
+  } finally {
+    if (imagePath) await fs.unlink(imagePath).catch(() => {});
+  }
+});
+
+// ============================================
+// /split - SPLIT HORIZONTAL IMAGE INTO PANELS
+// ============================================
+// Yatay görselleri (2 panel yan yana) ortadan böler
+// Her paneli auto-trim eder (boşlukları kırpar)
+// Boş panelleri atlar (skipEmpty)
+// n8n'den multipart/form-data ile kullanılır
+
+app.post('/split', upload.single('image'), async (req, res) => {
+  let imagePath;
+  
+  try {
+    const imageFile = req.file;
+    if (!imageFile) return res.status(400).json({ error: 'Image file required' });
+    
+    imagePath = imageFile.path;
+    const startTime = Date.now();
+    
+    // Parameters
+    const trimThreshold = parseInt(req.body.threshold) || 30;
+    const trimPadding = parseInt(req.body.padding) || 10;
+    const skipEmpty = req.body.skipEmpty !== 'false'; // default true
+    const outputFormat = req.body.format || 'json'; // 'json' veya 'first' (ilk paneli binary döner)
+    
+    console.log('='.repeat(60));
+    console.log(`✂️ Split Processing`);
+    console.log(`📊 Threshold: ${trimThreshold}, Padding: ${trimPadding}, SkipEmpty: ${skipEmpty}`);
+    
+    // Get image dimensions
+    const metadata = await sharp(imagePath).metadata();
+    const { width, height } = metadata;
+    console.log(`📏 Input: ${width}x${height}`);
+    
+    const mid = Math.floor(width / 2);
+    
+    // Extract left panel
+    const leftBuffer = await sharp(imagePath)
+      .extract({ left: 0, top: 0, width: mid, height })
+      .png()
+      .toBuffer();
+    
+    // Extract right panel
+    const rightBuffer = await sharp(imagePath)
+      .extract({ left: mid, top: 0, width: width - mid, height })
+      .png()
+      .toBuffer();
+    
+    const panels = [];
+    
+    for (const [idx, buffer] of [leftBuffer, rightBuffer].entries()) {
+      const panelName = idx === 0 ? 'left' : 'right';
+      
+      const trimmed = await detectAndTrimPanel(buffer, trimThreshold, trimPadding);
+      
+      if (skipEmpty && trimmed.isEmpty) {
+        console.log(`⏭️ ${panelName} panel is empty - skipping`);
+        continue;
+      }
+      
+      console.log(`✅ ${panelName}: ${trimmed.width}x${trimmed.height}`);
+      
+      panels.push({
+        name: panelName,
+        buffer: trimmed.buffer,
+        width: trimmed.width,
+        height: trimmed.height
+      });
+    }
+    
+    console.log(`📦 Result: ${panels.length} panel(s), ${Date.now() - startTime}ms`);
+    console.log('='.repeat(60));
+    
+    // Output mode
+    if (outputFormat === 'first' && panels.length > 0) {
+      // Binary mode - direkt ilk paneli PNG olarak döner (n8n için kolay)
+      res.set({
+        'Content-Type': 'image/png',
+        'Content-Disposition': `attachment; filename="panel-${panels[0].name}-${Date.now()}.png"`,
+        'X-Panel-Name': panels[0].name,
+        'X-Panel-Width': panels[0].width.toString(),
+        'X-Panel-Height': panels[0].height.toString(),
+        'X-Panel-Count': panels.length.toString()
+      });
+      res.send(panels[0].buffer);
+      return;
+    }
+    
+    // JSON mode - tüm panelleri base64 olarak döner
+    res.json({
+      success: true,
+      originalSize: { width, height },
+      panelCount: panels.length,
+      panels: panels.map(p => ({
+        name: p.name,
+        width: p.width,
+        height: p.height,
+        image: `data:image/png;base64,${p.buffer.toString('base64')}`
+      }))
+    });
+    
+  } catch (error) {
+    console.error('❌ Split Error:', error);
+    res.status(500).json({ error: 'Failed to split image', details: error.message });
+  } finally {
+    if (imagePath) await fs.unlink(imagePath).catch(() => {});
+  }
+});
+
+// ============================================
+// START SERVER
+// ============================================
+
+app.listen(PORT, () => {
+  console.log(`🚀 Yerlikaya Auto Crop API v3.2 running on port ${PORT}`);
+  console.log(`📡 Endpoints: /crop, /trim, /split`);
+});
