@@ -499,7 +499,8 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     const startTime = Date.now();
     
     // Parameters
-    const threshold = parseFloat(req.body.threshold) || 15;
+    const threshold = parseFloat(req.body.threshold) || 8;
+    const edgeThreshold = parseFloat(req.body.edgeThreshold) || 20;
     const enableErosion = req.body.erosion !== 'false' && req.body.erosion !== '0';
     const erosionRadius = parseInt(req.body.erosionRadius) || 1;
     const enableDecontamination = req.body.decontamination !== 'false';
@@ -509,9 +510,9 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     
     console.log('='.repeat(60));
     console.log(`🔍 v3.2 Flood-Fill Processing`);
-    console.log(`📊 Threshold: ${threshold}, Erosion: ${enableErosion}(${erosionRadius}px)`);
-    console.log(`🎨 Decontamination: ${enableDecontamination}, Softening: ${enableSoftening}`);
-    console.log(`🔭 Upscale: ${upscaleFactor}x`);
+    console.log(`📊 FloodThreshold: ${threshold} | EdgeThreshold: ${edgeThreshold} | Erosion: ${enableErosion} (${erosionRadius}px)`);
+    console.log(`🎨 Decontamination: ${enableDecontamination} | Softening: ${enableSoftening}`);
+    console.log(`🔭 Upscale: ${upscaleFactor}x | MinIslandSize: ${minIslandSize} (effective: ${minIslandSize * upscaleFactor * upscaleFactor})`);
     
     // Load image with alpha (+ optional upscale)
     const imageMeta = await sharp(imagePath).metadata();
@@ -550,7 +551,7 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     console.log(`🔲 Edge pixels: ${edgePixels.size}`);
     
     // Step 5: Apply transition zone + transparency
-    let processedData = applyTransitionZone(data, mask, width, height, channels, bgColor, threshold, edgePixels);
+    let processedData = applyTransitionZone(data, mask, width, height, channels, bgColor, edgeThreshold, edgePixels);
     
     // Step 6: Color decontamination
     if (enableDecontamination) {
