@@ -443,6 +443,30 @@
 
                     <div class="toggle-row">
                         <div>
+                            <div class="toggle-label">Color Replace</div>
+                            <div class="toggle-desc">BG rengine benzer fg pikselleri boyar (konum bağımsız)</div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggleColorReplace">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    
+                    <div id="colorReplaceRow" style="padding: 4px 0 8px 0; display:none;">
+                        <label style="font-size: 12px;">Hedef Renk:</label>
+                        <div style="display:flex; gap:8px; margin: 6px 0;">
+                            <button type="button" onclick="setColorReplaceTarget('ffffff')" style="background:#fff; color:#333; border:2px solid #ccc; padding:4px 12px; border-radius:6px; cursor:pointer; font-size:12px; width:auto;">⬜ Beyaz</button>
+                            <button type="button" onclick="setColorReplaceTarget('000000')" style="background:#000; color:#fff; border:2px solid #ccc; padding:4px 12px; border-radius:6px; cursor:pointer; font-size:12px; width:auto;">⬛ Siyah</button>
+                            <input type="color" id="colorReplacePicker" value="#000000" style="width:36px; height:30px; border:none; cursor:pointer; border-radius:4px;">
+                        </div>
+                        <input type="hidden" id="colorReplaceTarget" value="000000">
+                        <label style="font-size: 12px; margin-top:6px; display:block;">Threshold: <span class="value-badge" id="colorReplaceThresholdValue">20</span></label>
+                        <input type="range" id="colorReplaceThreshold" min="1" max="60" value="20" step="1">
+                        <small>BG rengine ne kadar yakın pikseller boyansın • Düşük = sadece çok benzeyenler</small>
+                    </div>
+
+                    <div class="toggle-row">
+                        <div>
                             <div class="toggle-label">Alpha Gaussian Softening</div>
                             <div class="toggle-desc">Alpha kanalına Gaussian blur uygular</div>
                         </div>
@@ -605,6 +629,19 @@
         });
         document.getElementById('dilationRadius').addEventListener('input', e => document.getElementById('dilationValue').textContent = e.target.value);
         
+        // Color replace toggle
+        const colorReplaceRow = document.getElementById('colorReplaceRow');
+        document.getElementById('toggleColorReplace').addEventListener('change', function() {
+            colorReplaceRow.style.display = this.checked ? 'block' : 'none';
+        });
+        document.getElementById('colorReplaceThreshold').addEventListener('input', e => document.getElementById('colorReplaceThresholdValue').textContent = e.target.value);
+        document.getElementById('colorReplacePicker').addEventListener('input', e => setColorReplaceTarget(e.target.value.replace('#','')));
+        
+        function setColorReplaceTarget(hex) {
+            document.getElementById('colorReplaceTarget').value = hex;
+            document.getElementById('colorReplacePicker').value = '#' + hex;
+        }
+        
         // Edge recolor toggle
         const edgeRecolorRow = document.getElementById('edgeRecolorRow');
         document.getElementById('toggleEdgeRecolor').addEventListener('change', function() {
@@ -721,6 +758,9 @@
                     formData.append('antiAlias', document.getElementById('toggleAntiAlias').checked ? 'true' : 'false');
                     formData.append('spillRemoval', document.getElementById('toggleSpill').checked ? 'true' : 'false');
                     formData.append('edgeRecolor', document.getElementById('toggleEdgeRecolor').checked ? 'true' : 'false');
+                    formData.append('colorReplace', document.getElementById('toggleColorReplace').checked ? 'true' : 'false');
+                    formData.append('colorReplaceTarget', document.getElementById('colorReplaceTarget').value);
+                    formData.append('colorReplaceThreshold', document.getElementById('colorReplaceThreshold').value);
                     formData.append('edgeRecolorColor', document.getElementById('edgeRecolorColor').value);
                     formData.append('edgeRecolorDepth', document.getElementById('edgeRecolorDepth').value);
                     formData.append('spillColor', document.getElementById('spillColor').value);
