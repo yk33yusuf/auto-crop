@@ -721,6 +721,58 @@ function spillRemoval(data, mask, width, height, channels, bgColor, edgePixels, 
   return result;
 }
 
+
+// Edge recolor: paint all edge pixels to a target color (white or black)
+// Useful when edge halo color is wrong and needs to be replaced entirely
+// edgeDepth controls how many pixels deep from bg boundary to recolor
+function edgeRecolor(data, mask, width, height, channels, edgePixels, targetColor, edgeDepth) {
+  const result = Buffer.from(data);
+
+  // BFS to get all pixels within edgeDepth from bg
+  const visited = new Uint8Array(width * height);
+  const queue = [...edgePixels];
+  const depthMap = new Int16Array(width * height).fill(-1);
+  
+  for (const idx of edgePixels) {
+    depthMap[idx] = 1;
+    visited[idx] = 1;
+  }
+
+  let head = 0;
+  const dx = [-1, 1, 0, 0];
+  const dy = [0, 0, -1, 1];
+
+  while (head < queue.length) {
+    const idx = queue[head++];
+    const d = depthMap[idx];
+    if (d >= edgeDepth) continue;
+    const x = idx % width;
+    const y = Math.floor(idx / width);
+    for (let k = 0; k < 4; k++) {
+      const nx = x + dx[k], ny = y + dy[k];
+      if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+      const nIdx = ny * width + nx;
+      if (visited[nIdx] || mask[nIdx] === 1) continue;
+      visited[nIdx] = 1;
+      depthMap[nIdx] = d + 1;
+      queue.push(nIdx);
+    }
+  }
+
+  // Paint all visited fg pixels to target color
+  for (let i = 0; i < width * height; i++) {
+    if (depthMap[i] < 1) continue;
+    const dataIdx = i * channels;
+    const alpha = result[dataIdx + 3];
+    if (alpha === 0) continue;
+    result[dataIdx]     = targetColor.r;
+    result[dataIdx + 1] = targetColor.g;
+    result[dataIdx + 2] = targetColor.b;
+  }
+
+  return result;
+}
+
 // ============================================
 // SPLIT HELPERS
 // ============================================
@@ -859,6 +911,14 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     const enableMatting = req.body.matting === 'true';
     const enableAntiAlias = req.body.antiAlias === 'true';
     const enableSpillRemoval = req.body.spillRemoval === 'true';
+    const enableEdgeRecolor = req.body.edgeRecolor === 'true';
+    const edgeRecolorDepth = Math.min(20, Math.max(1, parseInt(req.body.edgeRecolorDepth) || 3));
+    const edgeRecolorHex = (req.body.edgeRecolorColor || 'ffffff').replace('#', '');
+    const edgeRecolorColor = {
+      r: parseInt(edgeRecolorHex.slice(0,2), 16) || 255,
+      g: parseInt(edgeRecolorHex.slice(2,4), 16) || 255,
+      b: parseInt(edgeRecolorHex.slice(4,6), 16) || 255
+    };
     const spillStrength = Math.min(100, Math.max(1, parseInt(req.body.spillStrength) || 80));
     const spillColorHex = (req.body.spillColor || 'ffffff').replace('#', '');
     const spillColor = {
@@ -940,6 +1000,12 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     if (enableSpillRemoval) {
       processedData = spillRemoval(processedData, mask, width, height, channels, bgColor, edgePixels, spillColor, spillStrength);
       console.log(`🎨 Spill removal applied (#${spillColorHex}, strength:${spillStrength}%)`);
+    }
+
+    // Step 6d: Edge recolor (paint edge pixels to white/black)
+    if (enableEdgeRecolor) {
+      processedData = edgeRecolor(processedData, mask, width, height, channels, edgePixels, edgeRecolorColor, edgeRecolorDepth);
+      console.log(`🖌️ Edge recolor applied (#${edgeRecolorHex}, depth:${edgeRecolorDepth}px)`);
     }
 
     // Step 7: Morphological erosion on alpha
