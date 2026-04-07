@@ -291,58 +291,64 @@ function findEdgePixels(mask, width, height) {
   return edges;
 }
 
-function applyTransitionZone(data, mask, width, height, channels, bgColor, threshold, edgePixels) {
+function applyTransitionZone(data, mask, width, height, channels, bgColor, edgeZoneRadius, edgePixels) {
   const result = Buffer.from(data);
-  
-  // Ensure alpha channel
   const hasAlpha = channels >= 4;
-  
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = y * width + x;
-      const dataIdx = idx * channels;
-      
-      if (mask[idx] === 1) {
-        // Background - make transparent
-        if (hasAlpha) {
-          result[dataIdx + 3] = 0;
-        }
-        continue;
-      }
-      
-      // Edge pixel - apply transition
-      if (edgePixels.has(idx)) {
-        const r = data[dataIdx], g = data[dataIdx + 1], b = data[dataIdx + 2];
-        const dist = deltaE76Fast(r, g, b, bgColor.r, bgColor.g, bgColor.b);
-        
-        if (dist < threshold * 1.5) {
-          // Transition zone
-          const alpha = Math.min(255, Math.round((dist / (threshold * 1.5)) * 255));
-          
-          // Check if foreground neighbors dominate
-          let fgCount = 0, bgCount = 0;
-          const nx = [x-1, x+1, x, x, x-1, x+1, x-1, x+1];
-          const ny = [y, y, y-1, y+1, y-1, y-1, y+1, y+1];
-          
-          for (let d = 0; d < 8; d++) {
-            if (nx[d] >= 0 && nx[d] < width && ny[d] >= 0 && ny[d] < height) {
-              const nMask = mask[ny[d] * width + nx[d]];
-              if (nMask === 1) bgCount++;
-              else fgCount++;
-            }
-          }
-          
-          // If mostly foreground neighbors, keep more opaque
-          if (fgCount > bgCount * 2) {
-            if (hasAlpha) result[dataIdx + 3] = 255;
-          } else {
-            if (hasAlpha) result[dataIdx + 3] = Math.max(alpha, 30);
-          }
-        }
-      }
+  const totalPixels = width * height;
+
+  // Build distance-from-bg map via BFS (fg pixels only)
+  // edgeZoneRadius controls how many pixels deep the fade goes
+  const distMap = new Int16Array(totalPixels).fill(-1);
+
+  // Seed: direct edge pixels (fg pixels adjacent to bg) = distance 1
+  for (const idx of edgePixels) {
+    distMap[idx] = 1;
+  }
+
+  // BFS outward into fg for edgeZoneRadius layers
+  const queue = [...edgePixels];
+  let head = 0;
+  const dx = [-1, 1, 0, 0];
+  const dy = [0, 0, -1, 1];
+
+  while (head < queue.length) {
+    const idx = queue[head++];
+    const d = distMap[idx];
+    if (d >= edgeZoneRadius) continue;
+
+    const x = idx % width;
+    const y = Math.floor(idx / width);
+
+    for (let k = 0; k < 4; k++) {
+      const nx = x + dx[k], ny = y + dy[k];
+      if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+      const nIdx = ny * width + nx;
+      if (mask[nIdx] === 1) continue; // skip bg
+      if (distMap[nIdx] !== -1) continue; // already visited
+      distMap[nIdx] = d + 1;
+      queue.push(nIdx);
     }
   }
-  
+
+  // Apply transparency and fade
+  for (let i = 0; i < totalPixels; i++) {
+    const dataIdx = i * channels;
+
+    if (mask[i] === 1) {
+      // Background: fully transparent
+      if (hasAlpha) result[dataIdx + 3] = 0;
+      continue;
+    }
+
+    const d = distMap[i];
+    if (d === -1) continue; // deep fg, fully opaque — untouched
+
+    // d=1 (direct edge) → more transparent, d=edgeZoneRadius → nearly opaque
+    // Linear fade: alpha = (d / edgeZoneRadius) * 255
+    const alpha = Math.round((d / edgeZoneRadius) * 255);
+    if (hasAlpha) result[dataIdx + 3] = Math.min(result[dataIdx + 3], alpha);
+  }
+
   return result;
 }
 
@@ -637,7 +643,7 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     
     // Parameters
     const threshold = parseFloat(req.body.threshold) || 8;
-    const edgeThreshold = parseFloat(req.body.edgeThreshold) || 20;
+    const edgeThreshold = Math.max(1, Math.round(parseFloat(req.body.edgeThreshold) || 3));
     const enableErosion = req.body.erosion !== 'false' && req.body.erosion !== '0';
     const erosionRadius = parseInt(req.body.erosionRadius) || 1;
     const enableDecontamination = req.body.decontamination === 'true';
