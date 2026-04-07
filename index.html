@@ -308,8 +308,8 @@
                     <small>Arka planı ne kadar agresif sil • Düşük = temkinli • Yüksek = agresif</small>
                     
                     <h4 style="margin-top:14px;">🎨 Edge Zone (px)</h4>
-                    <input type="range" id="edgeThreshold" min="1" max="20" value="3" step="1">
-                    <div>Değer: <span class="value-badge" id="edgeThresholdValue">3</span></div>
+                    <input type="range" id="edgeThreshold" min="1" max="20" value="1" step="1">
+                    <div>Değer: <span class="value-badge" id="edgeThresholdValue">1</span></div>
                     <small>Kenar fade derinliği (piksel) • 1 = keskin • 10 = geniş geçiş</small>
                 </div>
                 
@@ -327,15 +327,15 @@
                 
                 <div class="control-group" style="margin-top: 16px;">
                     <h4>🏝️ Interior Island Detection</h4>
-                    <label style="font-size: 12px;">Min Island Size: <span class="value-badge" id="islandValue">100</span> px</label>
-                    <input type="range" id="minIsland" min="1" max="10000" value="1000" step="10">
+                    <label style="font-size: 12px;">Min Island Size: <span class="value-badge" id="islandValue">1</span> px</label>
+                    <input type="range" id="minIsland" min="1" max="10000" value="1" step="10">
                     <small>Tasarım içindeki bg adalarını kaldırır. Düşük = daha agresif, Yüksek = sadece büyük alanlar</small>
                 </div>
                 
                 <div class="control-group" style="margin-top: 16px;">
                     <h4>🔎 Upscale Pipeline</h4>
-                    <label style="font-size: 12px;">Upscale Factor: <span class="value-badge" id="upscaleValue">2</span>x</label>
-                    <input type="range" id="upscale" min="1" max="4" value="2" step="1">
+                    <label style="font-size: 12px;">Upscale Factor: <span class="value-badge" id="upscaleValue">4</span>x</label>
+                    <input type="range" id="upscale" min="1" max="4" value="4" step="1">
                     <small>1x = kapalı • 2x = önerilen • 4x = en temiz kenar (yavaş)<br>
                     Upscale → BG kaldır → Downscale = çok daha temiz kenarlar</small>
                 </div>
@@ -352,7 +352,7 @@
                             <div class="toggle-desc">Kenardaki fringe/kalıntıları keser</div>
                         </div>
                         <label class="switch">
-                            <input type="checkbox" id="toggleErosion" checked>
+                            <input type="checkbox" id="toggleErosion">
                             <span class="slider"></span>
                         </label>
                     </div>
@@ -369,7 +369,7 @@
                             <div class="toggle-desc">Halo/renk karışımını temizler</div>
                         </div>
                         <label class="switch">
-                            <input type="checkbox" id="toggleDecontaminate" checked>
+                            <input type="checkbox" id="toggleDecontaminate">
                             <span class="slider"></span>
                         </label>
                     </div>
@@ -380,7 +380,7 @@
                             <div class="toggle-desc">Alpha kanalına Gaussian blur uygular</div>
                         </div>
                         <label class="switch">
-                            <input type="checkbox" id="toggleSoften" checked>
+                            <input type="checkbox" id="toggleSoften">
                             <span class="slider"></span>
                         </label>
                     </div>
@@ -414,14 +414,14 @@
                             <div class="toggle-desc">Alpha'yı dışa genişletir — ince kenar detayları kurtarır</div>
                         </div>
                         <label class="switch">
-                            <input type="checkbox" id="toggleDilation">
+                            <input type="checkbox" id="toggleDilation" checked>
                             <span class="slider"></span>
                         </label>
                     </div>
                     
-                    <div id="dilationSliderRow" style="padding: 4px 0 8px 0; display:none;">
-                        <label style="font-size: 12px;">Dilation Radius: <span class="value-badge" id="dilationValue">1</span> px</label>
-                        <input type="range" id="dilationRadius" min="1" max="5" value="1" step="1">
+                    <div id="dilationSliderRow" style="padding: 4px 0 8px 0;">
+                        <label style="font-size: 12px;">Dilation Radius: <span class="value-badge" id="dilationValue">3</span> px</label>
+                        <input type="range" id="dilationRadius" min="1" max="5" value="3" step="1">
                         <small>1 = hafif genişleme • 5 = agresif</small>
                     </div>
                 </div>
