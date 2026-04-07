@@ -1,583 +1,769 @@
-<!DOCTYPE html>
-<html lang="tr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Yerlikaya Auto Crop Tool v3.0</title>
-    <style>
-        * { box-sizing: border-box; }
-        
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-            min-height: 100vh;
-        }
-        
-        .container {
-            background: #ffffff;
-            border-radius: 16px;
-            padding: 30px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-        }
-        
-        h1 {
-            text-align: center;
-            color: #1a1a2e;
-            margin-bottom: 8px;
-            font-size: 24px;
-        }
-        
-        .version-badge {
-            text-align: center;
-            margin-bottom: 24px;
-        }
-        
-        .version-badge span {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            padding: 4px 14px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-        }
-        
-        .upload-section {
-            border: 3px dashed #d0d0d0;
-            border-radius: 12px;
-            padding: 36px;
-            text-align: center;
-            margin-bottom: 24px;
-            transition: all 0.3s;
-            cursor: pointer;
-        }
-        
-        .upload-section:hover, .upload-section.drag-over {
-            border-color: #667eea;
-            background-color: #f8f9ff;
-        }
-        
-        .controls {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            margin-bottom: 24px;
-        }
-        
-        .control-group {
-            background: #f8f9fa;
-            padding: 18px;
-            border-radius: 10px;
-        }
-        
-        .control-group h4 {
-            margin: 0 0 12px 0;
-            color: #333;
-            font-size: 14px;
-        }
-        
-        label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 6px;
-            color: #555;
-            font-size: 13px;
-        }
-        
-        input[type="range"] {
-            width: 100%;
-            margin: 6px 0;
-        }
-        
-        .value-badge {
-            background: #667eea;
-            color: white;
-            padding: 2px 10px;
-            border-radius: 12px;
-            font-size: 13px;
-            font-weight: bold;
-        }
-        
-        .toggle-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #e9ecef;
-        }
-        
-        .toggle-row:last-child { border-bottom: none; }
-        
-        .toggle-label {
-            font-size: 13px;
-            color: #444;
-            font-weight: 500;
-        }
-        
-        .toggle-desc {
-            font-size: 11px;
-            color: #888;
-            margin-top: 2px;
-        }
-        
-        /* Toggle Switch */
-        .switch {
-            position: relative;
-            width: 44px;
-            height: 24px;
-            flex-shrink: 0;
-        }
-        
-        .switch input { opacity: 0; width: 0; height: 0; }
-        
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background-color: #ccc;
-            transition: 0.3s;
-            border-radius: 24px;
-        }
-        
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 18px;
-            width: 18px;
-            left: 3px;
-            bottom: 3px;
-            background-color: white;
-            transition: 0.3s;
-            border-radius: 50%;
-        }
-        
-        input:checked + .slider { background-color: #667eea; }
-        input:checked + .slider:before { transform: translateX(20px); }
-        
-        /* Radio buttons */
-        .method-option {
-            display: flex;
-            align-items: center;
-            padding: 8px 12px;
-            margin: 4px 0;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        
-        .method-option:hover { background: #e9ecef; }
-        
-        .method-option input[type="radio"] { margin-right: 8px; }
-        
-        .method-option label {
-            display: inline;
-            margin: 0;
-            cursor: pointer;
-            font-weight: 500;
-        }
-        
-        button {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            border: none;
-            padding: 14px 28px;
-            border-radius: 10px;
-            font-size: 15px;
-            font-weight: 700;
-            cursor: pointer;
-            width: 100%;
-            transition: all 0.2s;
-            letter-spacing: 0.3px;
-        }
-        
-        button:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
-        }
-        
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        
-        .results {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-top: 24px;
-        }
-        
-        .result-item {
-            text-align: center;
-            background: #f8f9fa;
-            padding: 16px;
-            border-radius: 10px;
-        }
-        
-        .result-item h3 {
-            margin: 0 0 12px 0;
-            color: #333;
-            font-size: 14px;
-        }
-        
-        .result-item img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-        
-        /* Checkerboard background for transparency preview */
-        .result-item.processed {
-            background: 
-                linear-gradient(45deg, #e0e0e0 25%, transparent 25%),
-                linear-gradient(-45deg, #e0e0e0 25%, transparent 25%),
-                linear-gradient(45deg, transparent 75%, #e0e0e0 75%),
-                linear-gradient(-45deg, transparent 75%, #e0e0e0 75%);
-            background-size: 16px 16px;
-            background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
-            background-color: #f0f0f0;
-        }
-        
-        .processing {
-            text-align: center;
-            padding: 24px;
-            color: #667eea;
-            font-weight: 600;
-        }
-        
-        .error {
-            background: #f8d7da;
-            color: #721c24;
-            padding: 12px 16px;
-            border-radius: 8px;
-            margin: 12px 0;
-            font-size: 14px;
-        }
-        
-        .success {
-            background: #d4edda;
-            color: #155724;
-            padding: 12px 16px;
-            border-radius: 8px;
-            margin: 12px 0;
-            font-size: 14px;
-        }
-        
-        .download-btn {
-            background: #28a745 !important;
-            font-size: 13px !important;
-            padding: 10px 20px !important;
-            margin-top: 10px;
-            width: auto !important;
-        }
-        
-        small {
-            color: #888;
-            font-size: 11px;
-            line-height: 1.4;
-        }
-        
-        @media (max-width: 768px) {
-            .controls, .results { grid-template-columns: 1fr; }
-            body { padding: 10px; }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🎯 Yerlikaya Auto Crop Tool</h1>
-        <div class="version-badge"><span>v3.5 — Upscale Pipeline + Flood-Fill + Boundary Cleanup</span></div>
-        
-        <div class="upload-section" id="uploadSection">
-            <h3>📁 Resim Yükle</h3>
-            <p>Bir resim dosyası seçin veya sürükleyip bırakın</p>
-            <input type="file" id="fileInput" accept="image/*">
-        </div>
-        
-        <div class="controls">
-            <!-- Sol: Threshold + Method -->
-            <div>
-                <div class="control-group" style="margin-bottom: 16px;">
-                    <h4>🎚️ Sensitivity Threshold</h4>
-                    <input type="range" id="threshold" min="0" max="50" value="15" step="1">
-                    <div>Değer: <span class="value-badge" id="thresholdValue">15</span></div>
-                    <small>0 = en hassas • 15 = önerilen • 30+ = toleranslı</small>
-                </div>
-                
-                <div class="control-group">
-                    <h4>⚙️ Processing Method</h4>
-                    <div class="method-option">
-                        <input type="radio" id="methodStandard" name="processingMethod" value="standard" checked>
-                        <label for="methodStandard">Standard — Flood-Fill + Island Removal</label>
-                    </div>
-                    <div class="method-option">
-                        <input type="radio" id="methodTrimOnly" name="processingMethod" value="trim-only">
-                        <label for="methodTrimOnly">✂️ Trim Only — Sadece kırpma</label>
-                    </div>
-                </div>
-                
-                <div class="control-group" style="margin-top: 16px;">
-                    <h4>🏝️ Interior Island Detection</h4>
-                    <label style="font-size: 12px;">Min Island Size: <span class="value-badge" id="islandValue">100</span> px</label>
-                    <input type="range" id="minIsland" min="20" max="10000" value="1000" step="100">
-                    <small>Tasarım içindeki bg adalarını kaldırır. Düşük = daha agresif, Yüksek = sadece büyük alanlar</small>
-                </div>
-                
-                <div class="control-group" style="margin-top: 16px;">
-                    <h4>🔎 Upscale Pipeline</h4>
-                    <label style="font-size: 12px;">Upscale Factor: <span class="value-badge" id="upscaleValue">2</span>x</label>
-                    <input type="range" id="upscale" min="1" max="4" value="2" step="1">
-                    <small>1x = kapalı • 2x = önerilen • 4x = en temiz kenar (yavaş)<br>
-                    Upscale → BG kaldır → Downscale = çok daha temiz kenarlar</small>
-                </div>
-            </div>
-            
-            <!-- Sağ: Post-Processing Pipeline -->
-            <div>
-                <div class="control-group" id="postProcessingGroup">
-                    <h4>🔧 Post-Processing Pipeline</h4>
-                    
-                    <div class="toggle-row">
-                        <div>
-                            <div class="toggle-label">Morphological Erosion</div>
-                            <div class="toggle-desc">Kenardaki fringe/kalıntıları keser</div>
-                        </div>
-                        <label class="switch">
-                            <input type="checkbox" id="toggleErosion" checked>
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                    
-                    <div id="erosionSliderRow" style="padding: 4px 0 8px 0;">
-                        <label style="font-size: 12px;">Erosion Radius: <span class="value-badge" id="erosionValue">1</span> px</label>
-                        <input type="range" id="erosionRadius" min="1" max="3" value="1" step="1">
-                        <small>1 = ince temizlik • 2 = orta • 3 = agresif</small>
-                    </div>
-                    
-                    <div class="toggle-row">
-                        <div>
-                            <div class="toggle-label">Color Decontamination</div>
-                            <div class="toggle-desc">Halo/renk karışımını temizler</div>
-                        </div>
-                        <label class="switch">
-                            <input type="checkbox" id="toggleDecontaminate" checked>
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                    
-                    <div class="toggle-row">
-                        <div>
-                            <div class="toggle-label">Alpha Edge Softening</div>
-                            <div class="toggle-desc">Kenar geçişlerini yumuşatır</div>
-                        </div>
-                        <label class="switch">
-                            <input type="checkbox" id="toggleSoften" checked>
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <button id="processBtn" disabled>🚀 İşleme Başla</button>
-        
-        <div id="processing" class="processing" style="display: none;">
-            <div>⏳ İşleniyor... Upscale → BG Removal → Downscale</div>
-            <div style="margin-top: 8px; font-size: 13px;">Upscale ayarına göre 10-60 saniye sürebilir.</div>
-        </div>
-        
-        <div id="errorDiv" style="display: none;"></div>
-        
-        <div id="results" class="results" style="display: none;">
-            <div class="result-item">
-                <h3>📷 Orijinal</h3>
-                <img id="originalImg" alt="Original">
-            </div>
-            <div class="result-item processed">
-                <h3>✅ İşlenmiş</h3>
-                <img id="processedImg" alt="Processed">
-                <button class="download-btn" id="downloadBtn" style="display: none;">💾 İndir (PNG)</button>
-            </div>
-        </div>
-    </div>
+const express = require('express');
+const multer = require('multer');
+const cors = require('cors');
+const sharp = require('sharp');
+const fs = require('fs').promises;
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(cors());
+app.use(express.json());
+app.use(express.static('.'));
+
+// Timeout (3 min)
+app.use((req, res, next) => {
+  req.setTimeout(180000);
+  res.setTimeout(180000);
+  next();
+});
+
+const upload = multer({ 
+  dest: 'uploads/',
+  limits: { fileSize: 50 * 1024 * 1024 }
+});
+
+fs.mkdir('uploads', { recursive: true });
+
+// ============================================
+// COLOR SCIENCE - CIE Lab
+// ============================================
+
+function srgbToLinear(c) {
+  c = c / 255;
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+function linearRgbToXyz(r, g, b) {
+  return {
+    x: r * 0.4124564 + g * 0.3575761 + b * 0.1804375,
+    y: r * 0.2126729 + g * 0.7151522 + b * 0.0721750,
+    z: r * 0.0193339 + g * 0.1191920 + b * 0.9503041
+  };
+}
+
+function xyzToLab(x, y, z) {
+  const xn = 0.95047, yn = 1.00000, zn = 1.08883;
+  function f(t) {
+    return t > 0.008856 ? Math.cbrt(t) : (903.3 * t + 16) / 116;
+  }
+  const fx = f(x / xn), fy = f(y / yn), fz = f(z / zn);
+  return {
+    L: 116 * fy - 16,
+    a: 500 * (fx - fy),
+    b: 200 * (fy - fz)
+  };
+}
+
+function rgbToLab(r, g, b) {
+  const lr = srgbToLinear(r), lg = srgbToLinear(g), lb = srgbToLinear(b);
+  const xyz = linearRgbToXyz(lr, lg, lb);
+  return xyzToLab(xyz.x, xyz.y, xyz.z);
+}
+
+// CIE76 Delta E
+const labCache = new Map();
+function deltaE76Fast(r1, g1, b1, r2, g2, b2) {
+  const key1 = (r1 << 16) | (g1 << 8) | b1;
+  let lab1 = labCache.get(key1);
+  if (!lab1) { lab1 = rgbToLab(r1, g1, b1); labCache.set(key1, lab1); }
+  
+  const key2 = (r2 << 16) | (g2 << 8) | b2;
+  let lab2 = labCache.get(key2);
+  if (!lab2) { lab2 = rgbToLab(r2, g2, b2); labCache.set(key2, lab2); }
+  
+  return Math.sqrt(
+    (lab1.L - lab2.L) ** 2 +
+    (lab1.a - lab2.a) ** 2 +
+    (lab1.b - lab2.b) ** 2
+  );
+}
+
+// ============================================
+// BACKGROUND DETECTION
+// ============================================
+
+function detectBackgroundColor(data, width, height, channels) {
+  const edgePixels = [];
+  const sampleStep = Math.max(1, Math.floor(Math.min(width, height) / 100));
+  
+  for (let x = 0; x < width; x += sampleStep) {
+    edgePixels.push(getPixelAt(data, x, 0, width, channels));
+    edgePixels.push(getPixelAt(data, x, height - 1, width, channels));
+  }
+  for (let y = 0; y < height; y += sampleStep) {
+    edgePixels.push(getPixelAt(data, 0, y, width, channels));
+    edgePixels.push(getPixelAt(data, width - 1, y, width, channels));
+  }
+  
+  // Cluster edge pixels - most common color
+  const colorMap = new Map();
+  for (const px of edgePixels) {
+    const qr = Math.round(px.r / 8) * 8;
+    const qg = Math.round(px.g / 8) * 8;
+    const qb = Math.round(px.b / 8) * 8;
+    const key = `${qr},${qg},${qb}`;
+    if (!colorMap.has(key)) colorMap.set(key, { r: 0, g: 0, b: 0, count: 0 });
+    const entry = colorMap.get(key);
+    entry.r += px.r; entry.g += px.g; entry.b += px.b; entry.count++;
+  }
+  
+  let maxCount = 0, bestCluster = null;
+  for (const entry of colorMap.values()) {
+    if (entry.count > maxCount) {
+      maxCount = entry.count;
+      bestCluster = entry;
+    }
+  }
+  
+  return {
+    r: Math.round(bestCluster.r / bestCluster.count),
+    g: Math.round(bestCluster.g / bestCluster.count),
+    b: Math.round(bestCluster.b / bestCluster.count)
+  };
+}
+
+function getPixelAt(data, x, y, width, channels) {
+  const idx = (y * width + x) * channels;
+  return { r: data[idx], g: data[idx + 1], b: data[idx + 2] };
+}
+
+// ============================================
+// FLOOD-FILL BACKGROUND REMOVAL
+// ============================================
+
+function floodFillBackground(data, width, height, channels, bgColor, threshold) {
+  const totalPixels = width * height;
+  const mask = new Uint8Array(totalPixels); // 0=unknown, 1=background, 2=foreground
+  
+  const bgLab = rgbToLab(bgColor.r, bgColor.g, bgColor.b);
+  
+  // BFS queue - start from all edge pixels
+  const queue = [];
+  
+  // Add edge pixels to queue
+  for (let x = 0; x < width; x++) {
+    queue.push(x); // top row
+    queue.push((height - 1) * width + x); // bottom row
+  }
+  for (let y = 1; y < height - 1; y++) {
+    queue.push(y * width); // left col
+    queue.push(y * width + width - 1); // right col
+  }
+  
+  // Mark edge pixels that match bg
+  const initialQueue = [];
+  for (const pixelIdx of queue) {
+    const dataIdx = pixelIdx * channels;
+    const r = data[dataIdx], g = data[dataIdx + 1], b = data[dataIdx + 2];
+    const dist = deltaE76Fast(r, g, b, bgColor.r, bgColor.g, bgColor.b);
     
-    <script>
-        const fileInput = document.getElementById('fileInput');
-        const uploadSection = document.getElementById('uploadSection');
-        const thresholdSlider = document.getElementById('threshold');
-        const thresholdValue = document.getElementById('thresholdValue');
-        const erosionRadius = document.getElementById('erosionRadius');
-        const erosionValue = document.getElementById('erosionValue');
-        const processBtn = document.getElementById('processBtn');
-        const processing = document.getElementById('processing');
-        const results = document.getElementById('results');
-        const errorDiv = document.getElementById('errorDiv');
-        const originalImg = document.getElementById('originalImg');
-        const processedImg = document.getElementById('processedImg');
-        const downloadBtn = document.getElementById('downloadBtn');
-        const postProcessingGroup = document.getElementById('postProcessingGroup');
-        const erosionSliderRow = document.getElementById('erosionSliderRow');
+    if (dist <= threshold) {
+      mask[pixelIdx] = 1;
+      initialQueue.push(pixelIdx);
+    }
+  }
+  
+  // BFS flood fill
+  let head = 0;
+  const bfsQueue = initialQueue;
+  const dx = [-1, 1, 0, 0];
+  const dy = [0, 0, -1, 1];
+  
+  while (head < bfsQueue.length) {
+    const idx = bfsQueue[head++];
+    const x = idx % width;
+    const y = Math.floor(idx / width);
+    
+    for (let d = 0; d < 4; d++) {
+      const nx = x + dx[d];
+      const ny = y + dy[d];
+      
+      if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+      
+      const nIdx = ny * width + nx;
+      if (mask[nIdx] !== 0) continue;
+      
+      const nDataIdx = nIdx * channels;
+      const r = data[nDataIdx], g = data[nDataIdx + 1], b = data[nDataIdx + 2];
+      const dist = deltaE76Fast(r, g, b, bgColor.r, bgColor.g, bgColor.b);
+      
+      if (dist <= threshold) {
+        mask[nIdx] = 1;
+        bfsQueue.push(nIdx);
+      }
+    }
+  }
+  
+  return mask;
+}
+
+// Interior island detection
+function removeInteriorIslands(data, mask, width, height, channels, bgColor, threshold, minIslandSize) {
+  const totalPixels = width * height;
+  const visited = new Uint8Array(totalPixels);
+  let removed = 0;
+  
+  for (let i = 0; i < totalPixels; i++) {
+    if (mask[i] !== 0 || visited[i]) continue;
+    
+    const dataIdx = i * channels;
+    const r = data[dataIdx], g = data[dataIdx + 1], b = data[dataIdx + 2];
+    const dist = deltaE76Fast(r, g, b, bgColor.r, bgColor.g, bgColor.b);
+    
+    if (dist > threshold) {
+      visited[i] = 1;
+      continue;
+    }
+    
+    // BFS to find connected region of bg-colored unmasked pixels
+    const region = [i];
+    const regionQueue = [i];
+    visited[i] = 1;
+    let head = 0;
+    
+    while (head < regionQueue.length) {
+      const idx = regionQueue[head++];
+      const x = idx % width;
+      const y = Math.floor(idx / width);
+      
+      const neighbors = [
+        y > 0 ? idx - width : -1,
+        y < height - 1 ? idx + width : -1,
+        x > 0 ? idx - 1 : -1,
+        x < width - 1 ? idx + 1 : -1
+      ];
+      
+      for (const nIdx of neighbors) {
+        if (nIdx < 0 || visited[nIdx] || mask[nIdx] !== 0) continue;
         
-        let selectedFile = null;
-        let processedBlob = null;
-        const API_URL = window.location.origin;
+        const nDataIdx = nIdx * channels;
+        const nr = data[nDataIdx], ng = data[nDataIdx + 1], nb = data[nDataIdx + 2];
+        const nDist = deltaE76Fast(nr, ng, nb, bgColor.r, bgColor.g, bgColor.b);
         
-        // Slider updates
-        thresholdSlider.addEventListener('input', e => thresholdValue.textContent = e.target.value);
-        erosionRadius.addEventListener('input', e => erosionValue.textContent = e.target.value);
-        
-        const minIslandSlider = document.getElementById('minIsland');
-        const islandValue = document.getElementById('islandValue');
-        minIslandSlider.addEventListener('input', e => islandValue.textContent = e.target.value);
-        
-        const upscaleSlider = document.getElementById('upscale');
-        const upscaleValue = document.getElementById('upscaleValue');
-        upscaleSlider.addEventListener('input', e => upscaleValue.textContent = e.target.value);
-        
-        // Toggle erosion slider visibility
-        document.getElementById('toggleErosion').addEventListener('change', function() {
-            erosionSliderRow.style.display = this.checked ? 'block' : 'none';
-        });
-        
-        // Trim-only seçilince post-processing'i disable et
-        document.querySelectorAll('input[name="processingMethod"]').forEach(radio => {
-            radio.addEventListener('change', function() {
-                const isTrimOnly = this.value === 'trim-only';
-                postProcessingGroup.style.opacity = isTrimOnly ? '0.4' : '1';
-                postProcessingGroup.style.pointerEvents = isTrimOnly ? 'none' : 'auto';
-            });
-        });
-        
-        // File selection
-        fileInput.addEventListener('change', handleFileSelect);
-        
-        uploadSection.addEventListener('dragover', e => { e.preventDefault(); uploadSection.classList.add('drag-over'); });
-        uploadSection.addEventListener('dragleave', e => { e.preventDefault(); uploadSection.classList.remove('drag-over'); });
-        uploadSection.addEventListener('drop', e => {
-            e.preventDefault();
-            uploadSection.classList.remove('drag-over');
-            if (e.dataTransfer.files.length > 0) {
-                fileInput.files = e.dataTransfer.files;
-                handleFileSelect({ target: { files: e.dataTransfer.files } });
-            }
-        });
-        
-        function handleFileSelect(event) {
-            const file = event.target.files[0];
-            if (file && file.type.startsWith('image/')) {
-                selectedFile = file;
-                processBtn.disabled = false;
-                const reader = new FileReader();
-                reader.onload = e => originalImg.src = e.target.result;
-                reader.readAsDataURL(file);
-                showMessage(`✅ ${file.name} seçildi`, 'success');
-            } else {
-                showMessage('❌ Geçerli bir resim dosyası seçin', 'error');
-            }
+        if (nDist <= threshold * 1.2) {
+          visited[nIdx] = 1;
+          region.push(nIdx);
+          regionQueue.push(nIdx);
+        } else {
+          visited[nIdx] = 1;
         }
+      }
+    }
+    
+    if (region.length >= minIslandSize) {
+      for (const idx of region) {
+        mask[idx] = 1;
+        removed++;
+      }
+    }
+  }
+  
+  return removed;
+}
+
+// ============================================
+// POST-PROCESSING
+// ============================================
+
+function findEdgePixels(mask, width, height) {
+  const edges = new Set();
+  
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      if (mask[idx] !== 1) continue; // not bg
+      
+      const neighbors = [
+        y > 0 ? idx - width : -1,
+        y < height - 1 ? idx + width : -1,
+        x > 0 ? idx - 1 : -1,
+        x < width - 1 ? idx + 1 : -1
+      ];
+      
+      for (const nIdx of neighbors) {
+        if (nIdx >= 0 && mask[nIdx] === 0) {
+          edges.add(nIdx);
+        }
+      }
+    }
+  }
+  
+  return edges;
+}
+
+function applyTransitionZone(data, mask, width, height, channels, bgColor, threshold, edgePixels) {
+  const result = Buffer.from(data);
+  
+  // Ensure alpha channel
+  const hasAlpha = channels >= 4;
+  
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      const dataIdx = idx * channels;
+      
+      if (mask[idx] === 1) {
+        // Background - make transparent
+        if (hasAlpha) {
+          result[dataIdx + 3] = 0;
+        }
+        continue;
+      }
+      
+      // Edge pixel - apply transition
+      if (edgePixels.has(idx)) {
+        const r = data[dataIdx], g = data[dataIdx + 1], b = data[dataIdx + 2];
+        const dist = deltaE76Fast(r, g, b, bgColor.r, bgColor.g, bgColor.b);
         
-        processBtn.addEventListener('click', () => selectedFile && processImage());
-        downloadBtn.addEventListener('click', () => processedBlob && downloadImage());
-        
-        async function processImage() {
-            if (!selectedFile) return;
-            
-            try {
-                processBtn.disabled = true;
-                processing.style.display = 'block';
-                results.style.display = 'none';
-                errorDiv.style.display = 'none';
-                
-                const methodRadios = document.getElementsByName('processingMethod');
-                let selectedMethod = 'standard';
-                for (const radio of methodRadios) {
-                    if (radio.checked) { selectedMethod = radio.value; break; }
-                }
-                
-                const formData = new FormData();
-                formData.append('image', selectedFile);
-                formData.append('threshold', thresholdSlider.value);
-                
-                let endpoint = '/crop';
-                
-                if (selectedMethod === 'trim-only') {
-                    endpoint = '/trim';
-                } else {
-                    // Post-processing params
-                    const erosionOn = document.getElementById('toggleErosion').checked;
-                    formData.append('erosion', erosionOn ? erosionRadius.value : 'false');
-                    formData.append('decontamination', document.getElementById('toggleDecontaminate').checked ? 'true' : 'false');
-                    formData.append('softening', document.getElementById('toggleSoften').checked ? 'true' : 'false');
-                    formData.append('minIslandSize', minIslandSlider.value);
-                    formData.append('upscale', upscaleSlider.value);
-                }
-                
-                console.log('🚀 Processing:', selectedMethod, 'threshold:', thresholdSlider.value);
-                
-                const response = await fetch(`${API_URL}${endpoint}`, {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                if (!response.ok) {
-                    let errorMsg = `Server error: ${response.status}`;
-                    try {
-                        const errorData = await response.json();
-                        errorMsg = errorData.error || errorMsg;
-                    } catch(e) {}
-                    throw new Error(errorMsg);
-                }
-                
-                processedBlob = await response.blob();
-                processedImg.src = URL.createObjectURL(processedBlob);
-                downloadBtn.style.display = 'block';
-                processing.style.display = 'none';
-                results.style.display = 'grid';
-                
-                const methodNames = { standard: 'Standard V3.2', 'trim-only': 'Trim Only' };
-                showMessage(`✅ Tamamlandı — ${methodNames[selectedMethod]}`, 'success');
-                
-            } catch (error) {
-                console.error('❌', error);
-                processing.style.display = 'none';
-                showMessage(`❌ ${error.message}`, 'error');
-            } finally {
-                processBtn.disabled = false;
+        if (dist < threshold * 1.5) {
+          // Transition zone
+          const alpha = Math.min(255, Math.round((dist / (threshold * 1.5)) * 255));
+          
+          // Check if foreground neighbors dominate
+          let fgCount = 0, bgCount = 0;
+          const nx = [x-1, x+1, x, x, x-1, x+1, x-1, x+1];
+          const ny = [y, y, y-1, y+1, y-1, y-1, y+1, y+1];
+          
+          for (let d = 0; d < 8; d++) {
+            if (nx[d] >= 0 && nx[d] < width && ny[d] >= 0 && ny[d] < height) {
+              const nMask = mask[ny[d] * width + nx[d]];
+              if (nMask === 1) bgCount++;
+              else fgCount++;
             }
+          }
+          
+          // If mostly foreground neighbors, keep more opaque
+          if (fgCount > bgCount * 2) {
+            if (hasAlpha) result[dataIdx + 3] = 255;
+          } else {
+            if (hasAlpha) result[dataIdx + 3] = Math.max(alpha, 30);
+          }
         }
-        
-        function downloadImage() {
-            if (!processedBlob) return;
-            const url = URL.createObjectURL(processedBlob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `yerlikaya-v3-${Date.now()}.png`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        }
-        
-        function showMessage(message, type) {
-            errorDiv.className = type;
-            errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
-            setTimeout(() => errorDiv.style.display = 'none', 5000);
-        }
-        
-        // API check
-        window.addEventListener('load', async () => {
-            try {
-                const res = await fetch(`${API_URL}/`);
-                if (res.ok) console.log('🚀 API:', await res.json());
-            } catch (e) {
-                showMessage('⚠️ API bağlantısı kontrol ediliyor...', 'error');
+      }
+    }
+  }
+  
+  return result;
+}
+
+function colorDecontaminate(data, mask, width, height, channels, bgColor, edgePixels) {
+  if (channels < 4) return data;
+  
+  const result = Buffer.from(data);
+  
+  for (const idx of edgePixels) {
+    const dataIdx = idx * channels;
+    const alpha = result[dataIdx + 3];
+    
+    if (alpha === 0 || alpha === 255) continue;
+    
+    const a = alpha / 255;
+    const r = result[dataIdx], g = result[dataIdx + 1], b = result[dataIdx + 2];
+    
+    // Un-premultiply background contamination
+    result[dataIdx]     = Math.min(255, Math.max(0, Math.round((r - bgColor.r * (1 - a)) / a)));
+    result[dataIdx + 1] = Math.min(255, Math.max(0, Math.round((g - bgColor.g * (1 - a)) / a)));
+    result[dataIdx + 2] = Math.min(255, Math.max(0, Math.round((b - bgColor.b * (1 - a)) / a)));
+  }
+  
+  return result;
+}
+
+// ============================================
+// SPLIT HELPERS
+// ============================================
+
+async function detectAndTrimPanel(buffer, trimThreshold, trimPadding) {
+  const image = sharp(buffer);
+  const meta = await image.metadata();
+  const { width, height, channels } = meta;
+  
+  const raw = await image.raw().toBuffer();
+  
+  // Sample corner pixels for background color
+  const getPixel = (x, y) => {
+    const idx = (y * width + x) * channels;
+    return [raw[idx], raw[idx + 1], raw[idx + 2]];
+  };
+  
+  const corners = [
+    getPixel(0, 0),
+    getPixel(width - 1, 0),
+    getPixel(0, height - 1),
+    getPixel(width - 1, height - 1)
+  ];
+  
+  // Median background color
+  const bg = [0, 1, 2].map(ch => {
+    const vals = corners.map(c => c[ch]).sort((a, b) => a - b);
+    return Math.round((vals[1] + vals[2]) / 2);
+  });
+  
+  // Find bounding box of non-background pixels
+  let minX = width, minY = height, maxX = 0, maxY = 0;
+  let hasContent = false;
+  
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * channels;
+      const r = raw[idx], g = raw[idx + 1], b = raw[idx + 2];
+      
+      const dist = Math.sqrt(
+        (r - bg[0]) ** 2 + (g - bg[1]) ** 2 + (b - bg[2]) ** 2
+      );
+      
+      if (dist > trimThreshold) {
+        hasContent = true;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  
+  if (!hasContent) {
+    return { buffer, width, height, isEmpty: true };
+  }
+  
+  // Apply padding
+  minX = Math.max(0, minX - trimPadding);
+  minY = Math.max(0, minY - trimPadding);
+  maxX = Math.min(width - 1, maxX + trimPadding);
+  maxY = Math.min(height - 1, maxY + trimPadding);
+  
+  const cropW = maxX - minX + 1;
+  const cropH = maxY - minY + 1;
+  
+  // Phase 1: Manual crop based on bg detection
+  const croppedBuffer = await sharp(buffer)
+    .extract({ left: minX, top: minY, width: cropW, height: cropH })
+    .png()
+    .toBuffer();
+  
+  // Phase 2: Sharp trim to catch JPEG artifact borders
+  // (white/gray fringes that manual detection misses)
+  try {
+    const finalBuffer = await sharp(croppedBuffer)
+      .trim({ threshold: 20 })
+      .png()
+      .toBuffer();
+    
+    const finalMeta = await sharp(finalBuffer).metadata();
+    return {
+      buffer: finalBuffer,
+      width: finalMeta.width,
+      height: finalMeta.height,
+      isEmpty: false
+    };
+  } catch (e) {
+    // trim() can fail if entire image is one color
+    return {
+      buffer: croppedBuffer,
+      width: cropW,
+      height: cropH,
+      isEmpty: false
+    };
+  }
+}
+
+// ============================================
+// HEALTH CHECK
+// ============================================
+
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    service: 'Yerlikaya Auto Crop API',
+    version: '3.2.0',
+    endpoints: {
+      crop: 'POST /crop - Background removal + auto crop (flood-fill)',
+      trim: 'POST /trim - Simple whitespace trim',
+      split: 'POST /split - Split horizontal image into panels + auto trim'
+    }
+  });
+});
+
+// ============================================
+// /crop - FLOOD-FILL BACKGROUND REMOVAL + CROP
+// ============================================
+
+app.post('/crop', upload.single('image'), async (req, res) => {
+  let imagePath;
+  
+  try {
+    const imageFile = req.file;
+    if (!imageFile) return res.status(400).json({ error: 'Image file required' });
+    
+    imagePath = imageFile.path;
+    const startTime = Date.now();
+    
+    // Parameters
+    const threshold = parseFloat(req.body.threshold) || 15;
+    const enableErosion = req.body.erosion !== 'false' && req.body.erosion !== '0';
+    const erosionRadius = parseInt(req.body.erosionRadius) || 1;
+    const enableDecontamination = req.body.decontamination !== 'false';
+    const enableSoftening = req.body.softening !== 'false';
+    const minIslandSize = parseInt(req.body.minIslandSize) || 100;
+    const upscaleFactor = Math.min(4, Math.max(1, parseInt(req.body.upscale) || 1));
+    
+    console.log('='.repeat(60));
+    console.log(`🔍 v3.2 Flood-Fill Processing`);
+    console.log(`📊 Threshold: ${threshold}, Erosion: ${enableErosion}(${erosionRadius}px)`);
+    console.log(`🎨 Decontamination: ${enableDecontamination}, Softening: ${enableSoftening}`);
+    console.log(`🔭 Upscale: ${upscaleFactor}x`);
+    
+    // Load image with alpha (+ optional upscale)
+    const imageMeta = await sharp(imagePath).metadata();
+    const origWidth = imageMeta.width;
+    const origHeight = imageMeta.height;
+
+    let imageSharp = sharp(imagePath).ensureAlpha();
+    if (upscaleFactor > 1) {
+      imageSharp = imageSharp.resize(origWidth * upscaleFactor, origHeight * upscaleFactor, {
+        kernel: sharp.kernel.lanczos3
+      });
+    }
+    const { data, info } = await imageSharp.raw().toBuffer({ resolveWithObject: true });
+    const { width, height, channels } = info;
+    
+    console.log(`📏 Original: ${origWidth}x${origHeight}, Processing: ${width}x${height}, channels: ${channels}`);
+    
+    // Step 1: Detect background
+    const bgColor = detectBackgroundColor(data, width, height, channels);
+    console.log(`🎨 Background: rgb(${bgColor.r}, ${bgColor.g}, ${bgColor.b})`);
+    
+    // Step 2: Flood-fill from edges
+    const mask = floodFillBackground(data, width, height, channels, bgColor, threshold);
+    
+    let bgCount = 0;
+    for (let i = 0; i < mask.length; i++) if (mask[i] === 1) bgCount++;
+    console.log(`🌊 Flood-fill: ${bgCount} bg pixels (${(bgCount / mask.length * 100).toFixed(1)}%)`);
+    
+    // Step 3: Interior islands (scale minIslandSize by upscale factor)
+    const effectiveMinIslandSize = minIslandSize * (upscaleFactor * upscaleFactor);
+    const removed = removeInteriorIslands(data, mask, width, height, channels, bgColor, threshold * 1.2, effectiveMinIslandSize);
+    if (removed > 0) console.log(`🏝️ Interior islands removed: ${removed} pixels (minSize: ${effectiveMinIslandSize})`);
+    
+    // Step 4: Find edge pixels
+    const edgePixels = findEdgePixels(mask, width, height);
+    console.log(`🔲 Edge pixels: ${edgePixels.size}`);
+    
+    // Step 5: Apply transition zone + transparency
+    let processedData = applyTransitionZone(data, mask, width, height, channels, bgColor, threshold, edgePixels);
+    
+    // Step 6: Color decontamination
+    if (enableDecontamination) {
+      processedData = colorDecontaminate(processedData, mask, width, height, channels, bgColor, edgePixels);
+    }
+    
+    // Step 7: Morphological erosion on alpha
+    if (enableErosion) {
+      for (let pass = 0; pass < erosionRadius; pass++) {
+        const eroded = Buffer.from(processedData);
+        for (const idx of edgePixels) {
+          const x = idx % width;
+          const y = Math.floor(idx / width);
+          const dataIdx = idx * channels;
+          
+          // Check 3x3 neighborhood
+          let minAlpha = 255;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const nx = x + dx, ny = y + dy;
+              if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                const nDataIdx = (ny * width + nx) * channels;
+                minAlpha = Math.min(minAlpha, processedData[nDataIdx + 3]);
+              }
             }
-        });
-    </script>
-</body>
-</html>
+          }
+          eroded[dataIdx + 3] = minAlpha;
+        }
+        processedData = eroded;
+      }
+    }
+    
+    // Step 8: Crop to content (+ downscale back to original resolution)
+    labCache.clear();
+    
+    let finalSharp = sharp(processedData, {
+      raw: { width, height, channels }
+    }).trim();
+
+    if (upscaleFactor > 1) {
+      finalSharp = finalSharp.resize(origWidth, origHeight, {
+        kernel: sharp.kernel.lanczos3
+      });
+    }
+
+    const result = await finalSharp
+      .png({ compressionLevel: 6, adaptiveFiltering: true })
+      .toBuffer();
+    
+    console.log(`✅ Done: ${(result.length / 1024).toFixed(0)}KB, ${Date.now() - startTime}ms`);
+    console.log('='.repeat(60));
+    
+    res.set({
+      'Content-Type': 'image/png',
+      'Content-Disposition': `attachment; filename="cropped-${Date.now()}.png"`
+    });
+    res.send(result);
+    
+  } catch (error) {
+    console.error('❌ Error:', error);
+    labCache.clear();
+    res.status(500).json({ error: 'Failed to process image', details: error.message });
+  } finally {
+    if (imagePath) await fs.unlink(imagePath).catch(() => {});
+  }
+});
+
+// ============================================
+// /trim - SIMPLE WHITESPACE TRIM
+// ============================================
+
+app.post('/trim', upload.single('image'), async (req, res) => {
+  let imagePath;
+  try {
+    const imageFile = req.file;
+    if (!imageFile) return res.status(400).json({ error: 'Image file required' });
+    
+    imagePath = imageFile.path;
+    const threshold = parseInt(req.body.threshold) || 10;
+    
+    console.log('✂️ Trim-only, threshold:', threshold);
+    
+    const trimmedBuffer = await sharp(imagePath)
+      .trim({ threshold })
+      .png()
+      .toBuffer();
+    
+    res.set({
+      'Content-Type': 'image/png',
+      'Content-Disposition': `attachment; filename="trimmed-${Date.now()}.png"`
+    });
+    res.send(trimmedBuffer);
+  } catch (error) {
+    console.error('❌ Trim Error:', error);
+    res.status(500).json({ error: 'Failed to trim', details: error.message });
+  } finally {
+    if (imagePath) await fs.unlink(imagePath).catch(() => {});
+  }
+});
+
+// ============================================
+// /split - SPLIT HORIZONTAL IMAGE INTO PANELS
+// ============================================
+// Yatay görselleri (2 panel yan yana) ortadan böler
+// Her paneli auto-trim eder (boşlukları kırpar)
+// Boş panelleri atlar (skipEmpty)
+// n8n'den multipart/form-data ile kullanılır
+
+app.post('/split', upload.single('image'), async (req, res) => {
+  let imagePath;
+  
+  try {
+    const imageFile = req.file;
+    if (!imageFile) return res.status(400).json({ error: 'Image file required' });
+    
+    imagePath = imageFile.path;
+    const startTime = Date.now();
+    
+    // Parameters
+    const trimThreshold = parseInt(req.body.threshold) || 30;
+    const trimPadding = parseInt(req.body.padding) || 10;
+    const skipEmpty = req.body.skipEmpty !== 'false'; // default true
+    const outputFormat = req.body.format || 'json'; // 'json' veya 'first' (ilk paneli binary döner)
+    
+    console.log('='.repeat(60));
+    console.log(`✂️ Split Processing`);
+    console.log(`📊 Threshold: ${trimThreshold}, Padding: ${trimPadding}, SkipEmpty: ${skipEmpty}`);
+    
+    // Get image dimensions
+    const metadata = await sharp(imagePath).metadata();
+    const { width, height } = metadata;
+    console.log(`📏 Input: ${width}x${height}`);
+    
+    const mid = Math.floor(width / 2);
+    
+    // Extract left panel
+    const leftBuffer = await sharp(imagePath)
+      .extract({ left: 0, top: 0, width: mid, height })
+      .png()
+      .toBuffer();
+    
+    // Extract right panel
+    const rightBuffer = await sharp(imagePath)
+      .extract({ left: mid, top: 0, width: width - mid, height })
+      .png()
+      .toBuffer();
+    
+    const panels = [];
+    
+    for (const [idx, buffer] of [leftBuffer, rightBuffer].entries()) {
+      const panelName = idx === 0 ? 'left' : 'right';
+      
+      const trimmed = await detectAndTrimPanel(buffer, trimThreshold, trimPadding);
+      
+      if (skipEmpty && trimmed.isEmpty) {
+        console.log(`⏭️ ${panelName} panel is empty - skipping`);
+        continue;
+      }
+      
+      console.log(`✅ ${panelName}: ${trimmed.width}x${trimmed.height}`);
+      
+      panels.push({
+        name: panelName,
+        buffer: trimmed.buffer,
+        width: trimmed.width,
+        height: trimmed.height
+      });
+    }
+    
+    console.log(`📦 Result: ${panels.length} panel(s), ${Date.now() - startTime}ms`);
+    console.log('='.repeat(60));
+    
+    // Output mode
+    if (outputFormat === 'first' && panels.length > 0) {
+      // Binary mode - direkt ilk paneli PNG olarak döner (n8n için kolay)
+      res.set({
+        'Content-Type': 'image/png',
+        'Content-Disposition': `attachment; filename="panel-${panels[0].name}-${Date.now()}.png"`,
+        'X-Panel-Name': panels[0].name,
+        'X-Panel-Width': panels[0].width.toString(),
+        'X-Panel-Height': panels[0].height.toString(),
+        'X-Panel-Count': panels.length.toString()
+      });
+      res.send(panels[0].buffer);
+      return;
+    }
+    
+    // JSON mode - tüm panelleri base64 olarak döner
+    res.json({
+      success: true,
+      originalSize: { width, height },
+      panelCount: panels.length,
+      panels: panels.map(p => ({
+        name: p.name,
+        width: p.width,
+        height: p.height,
+        image: p.buffer.toString('base64')
+      }))
+    });
+    
+  } catch (error) {
+    console.error('❌ Split Error:', error);
+    res.status(500).json({ error: 'Failed to split image', details: error.message });
+  } finally {
+    if (imagePath) await fs.unlink(imagePath).catch(() => {});
+  }
+});
+
+// ============================================
+// START SERVER
+// ============================================
+
+app.listen(PORT, () => {
+  console.log(`🚀 Yerlikaya Auto Crop API v3.2 running on port ${PORT}`);
+  console.log(`📡 Endpoints: /crop, /trim, /split`);
+});
