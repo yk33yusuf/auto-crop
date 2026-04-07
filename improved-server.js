@@ -500,23 +500,34 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     
     // Parameters
     const threshold = parseFloat(req.body.threshold) || 15;
-    const enableErosion = req.body.erosion !== 'false';
+    const enableErosion = req.body.erosion !== 'false' && req.body.erosion !== '0';
     const erosionRadius = parseInt(req.body.erosionRadius) || 1;
     const enableDecontamination = req.body.decontamination !== 'false';
     const enableSoftening = req.body.softening !== 'false';
     const minIslandSize = parseInt(req.body.minIslandSize) || 100;
+    const upscaleFactor = Math.min(4, Math.max(1, parseInt(req.body.upscale) || 1));
     
     console.log('='.repeat(60));
     console.log(`🔍 v3.2 Flood-Fill Processing`);
     console.log(`📊 Threshold: ${threshold}, Erosion: ${enableErosion}(${erosionRadius}px)`);
     console.log(`🎨 Decontamination: ${enableDecontamination}, Softening: ${enableSoftening}`);
+    console.log(`🔭 Upscale: ${upscaleFactor}x`);
     
-    // Load image with alpha
-    const image = sharp(imagePath).ensureAlpha();
-    const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
+    // Load image with alpha (+ optional upscale)
+    const imageMeta = await sharp(imagePath).metadata();
+    const origWidth = imageMeta.width;
+    const origHeight = imageMeta.height;
+
+    let imageSharp = sharp(imagePath).ensureAlpha();
+    if (upscaleFactor > 1) {
+      imageSharp = imageSharp.resize(origWidth * upscaleFactor, origHeight * upscaleFactor, {
+        kernel: sharp.kernel.lanczos3
+      });
+    }
+    const { data, info } = await imageSharp.raw().toBuffer({ resolveWithObject: true });
     const { width, height, channels } = info;
     
-    console.log(`📏 Size: ${width}x${height}, channels: ${channels}`);
+    console.log(`📏 Original: ${origWidth}x${origHeight}, Processing: ${width}x${height}, channels: ${channels}`);
     
     // Step 1: Detect background
     const bgColor = detectBackgroundColor(data, width, height, channels);
@@ -571,15 +582,22 @@ app.post('/crop', upload.single('image'), async (req, res) => {
       }
     }
     
-    // Step 8: Crop to content
+    // Step 8: Crop to content (+ downscale back to original resolution)
     labCache.clear();
     
-    const result = await sharp(processedData, {
+    let finalSharp = sharp(processedData, {
       raw: { width, height, channels }
-    })
-    .trim()
-    .png({ compressionLevel: 6, adaptiveFiltering: true })
-    .toBuffer();
+    }).trim();
+
+    if (upscaleFactor > 1) {
+      finalSharp = finalSharp.resize(origWidth, origHeight, {
+        kernel: sharp.kernel.lanczos3
+      });
+    }
+
+    const result = await finalSharp
+      .png({ compressionLevel: 6, adaptiveFiltering: true })
+      .toBuffer();
     
     console.log(`✅ Done: ${(result.length / 1024).toFixed(0)}KB, ${Date.now() - startTime}ms`);
     console.log('='.repeat(60));
