@@ -370,6 +370,115 @@ function colorDecontaminate(data, mask, width, height, channels, bgColor, edgePi
 }
 
 // ============================================
+// ALPHA SOFTENING (Gaussian blur on alpha channel)
+// ============================================
+
+function alphaGaussianBlur(data, width, height, channels, radius) {
+  if (radius <= 0) return data;
+  const result = Buffer.from(data);
+  const sigma = radius / 2;
+  const size = radius * 2 + 1;
+  
+  // Build 1D Gaussian kernel
+  const kernel = [];
+  let kernelSum = 0;
+  for (let i = 0; i < size; i++) {
+    const x = i - radius;
+    const val = Math.exp(-(x * x) / (2 * sigma * sigma));
+    kernel.push(val);
+    kernelSum += val;
+  }
+  for (let i = 0; i < size; i++) kernel[i] /= kernelSum;
+  
+  // Horizontal pass on alpha
+  const temp = Buffer.from(data);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * channels;
+      if (data[idx + 3] === 255) continue; // skip fully opaque - perf
+      let sum = 0;
+      for (let k = 0; k < size; k++) {
+        const nx = Math.min(width - 1, Math.max(0, x + k - radius));
+        sum += data[(y * width + nx) * channels + 3] * kernel[k];
+      }
+      temp[idx + 3] = Math.round(sum);
+    }
+  }
+  
+  // Vertical pass on alpha
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * channels;
+      if (temp[idx + 3] === 255) continue;
+      let sum = 0;
+      for (let k = 0; k < size; k++) {
+        const ny = Math.min(height - 1, Math.max(0, y + k - radius));
+        sum += temp[(ny * width + x) * channels + 3] * kernel[k];
+      }
+      result[idx + 3] = Math.round(sum);
+    }
+  }
+  
+  return result;
+}
+
+// Alpha feather: gradually fade alpha near edges (distance-based)
+function alphaFeather(data, mask, width, height, channels, featherRadius) {
+  if (featherRadius <= 0) return data;
+  const result = Buffer.from(data);
+  
+  // Build distance map from bg boundary for fg pixels
+  // Simple approach: for each fg pixel near edge, compute min distance to bg
+  const distMap = new Float32Array(width * height).fill(999);
+  
+  // Seed: bg pixels have distance 0
+  for (let i = 0; i < width * height; i++) {
+    if (mask[i] === 1) distMap[i] = 0;
+  }
+  
+  // BFS to compute distances
+  const queue = [];
+  for (let i = 0; i < width * height; i++) {
+    if (mask[i] === 1) queue.push(i);
+  }
+  
+  let head = 0;
+  const dx = [-1, 1, 0, 0];
+  const dy = [0, 0, -1, 1];
+  
+  while (head < queue.length) {
+    const idx = queue[head++];
+    const x = idx % width;
+    const y = Math.floor(idx / width);
+    const d = distMap[idx];
+    
+    if (d >= featherRadius) continue;
+    
+    for (let k = 0; k < 4; k++) {
+      const nx = x + dx[k], ny = y + dy[k];
+      if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+      const nIdx = ny * width + nx;
+      if (distMap[nIdx] <= d + 1) continue;
+      distMap[nIdx] = d + 1;
+      queue.push(nIdx);
+    }
+  }
+  
+  // Apply feather: fg pixels within featherRadius get faded alpha
+  for (let i = 0; i < width * height; i++) {
+    if (mask[i] === 1) continue; // bg already transparent
+    const dist = distMap[i];
+    if (dist >= featherRadius) continue; // far from edge, fully opaque
+    const dataIdx = i * channels;
+    const currentAlpha = result[dataIdx + 3];
+    const featherAlpha = Math.round((dist / featherRadius) * 255);
+    result[dataIdx + 3] = Math.min(currentAlpha, featherAlpha);
+  }
+  
+  return result;
+}
+
+// ============================================
 // SPLIT HELPERS
 // ============================================
 
@@ -505,13 +614,16 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     const erosionRadius = parseInt(req.body.erosionRadius) || 1;
     const enableDecontamination = req.body.decontamination !== 'false';
     const enableSoftening = req.body.softening !== 'false';
+    const softenRadius = Math.min(10, Math.max(0, parseInt(req.body.softenRadius) || 2));
+    const enableFeather = req.body.feather !== 'false';
+    const featherRadius = Math.min(20, Math.max(0, parseInt(req.body.featherRadius) || 3));
     const minIslandSize = parseInt(req.body.minIslandSize) || 100;
     const upscaleFactor = Math.min(4, Math.max(1, parseInt(req.body.upscale) || 1));
     
     console.log('='.repeat(60));
     console.log(`🔍 v3.2 Flood-Fill Processing`);
     console.log(`📊 FloodThreshold: ${threshold} | EdgeThreshold: ${edgeThreshold} | Erosion: ${enableErosion} (${erosionRadius}px)`);
-    console.log(`🎨 Decontamination: ${enableDecontamination} | Softening: ${enableSoftening}`);
+    console.log(`🎨 Decontamination: ${enableDecontamination} | Softening: ${enableSoftening} (r:${softenRadius}) | Feather: ${enableFeather} (r:${featherRadius})`);
     console.log(`🔭 Upscale: ${upscaleFactor}x | MinIslandSize: ${minIslandSize} (effective: ${minIslandSize * upscaleFactor * upscaleFactor})`);
     
     // Load image with alpha (+ optional upscale)
@@ -582,6 +694,18 @@ app.post('/crop', upload.single('image'), async (req, res) => {
         }
         processedData = eroded;
       }
+    }
+    
+    // Step 7b: Alpha Gaussian softening
+    if (enableSoftening && softenRadius > 0) {
+      processedData = alphaGaussianBlur(processedData, width, height, channels, softenRadius);
+      console.log(`💫 Alpha softening applied (r:${softenRadius})`);
+    }
+    
+    // Step 7c: Alpha feathering (distance-based fade)
+    if (enableFeather && featherRadius > 0) {
+      processedData = alphaFeather(processedData, mask, width, height, channels, featherRadius);
+      console.log(`🪶 Alpha feathering applied (r:${featherRadius})`);
     }
     
     // Step 8: Crop to content (+ downscale back to original resolution)
