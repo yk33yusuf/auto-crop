@@ -407,6 +407,23 @@
                         <input type="range" id="featherRadius" min="1" max="20" value="3" step="1">
                         <small>1 = ince • 10 = geniş fade</small>
                     </div>
+                    
+                    <div class="toggle-row">
+                        <div>
+                            <div class="toggle-label">Alpha Dilation</div>
+                            <div class="toggle-desc">Alpha'yı dışa genişletir — ince kenar detayları kurtarır</div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggleDilation">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    
+                    <div id="dilationSliderRow" style="padding: 4px 0 8px 0; display:none;">
+                        <label style="font-size: 12px;">Dilation Radius: <span class="value-badge" id="dilationValue">1</span> px</label>
+                        <input type="range" id="dilationRadius" min="1" max="5" value="1" step="1">
+                        <small>1 = hafif genişleme • 5 = agresif</small>
+                    </div>
                 </div>
             </div>
         </div>
@@ -490,6 +507,13 @@
         document.getElementById('softenRadius').addEventListener('input', e => document.getElementById('softenValue').textContent = e.target.value);
         document.getElementById('featherRadius').addEventListener('input', e => document.getElementById('featherValue').textContent = e.target.value);
         
+        // Dilation toggle + slider visibility
+        const dilationSliderRow = document.getElementById('dilationSliderRow');
+        document.getElementById('toggleDilation').addEventListener('change', function() {
+            dilationSliderRow.style.display = this.checked ? 'block' : 'none';
+        });
+        document.getElementById('dilationRadius').addEventListener('input', e => document.getElementById('dilationValue').textContent = e.target.value);
+        
         // Trim-only seçilince post-processing'i disable et
         document.querySelectorAll('input[name="processingMethod"]').forEach(radio => {
             radio.addEventListener('change', function() {
@@ -563,6 +587,8 @@
                     formData.append('softenRadius', document.getElementById('softenRadius').value);
                     formData.append('feather', document.getElementById('toggleFeather').checked ? 'true' : 'false');
                     formData.append('featherRadius', document.getElementById('featherRadius').value);
+                    formData.append('dilation', document.getElementById('toggleDilation').checked ? 'true' : 'false');
+                    formData.append('dilationRadius', document.getElementById('dilationRadius').value);
                     formData.append('minIslandSize', minIslandSlider.value);
                     formData.append('upscale', upscaleSlider.value);
                 }
