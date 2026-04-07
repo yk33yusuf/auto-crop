@@ -509,10 +509,10 @@
                 } else {
                     // Post-processing params
                     const erosionOn = document.getElementById('toggleErosion').checked;
-                    formData.append('erosion', erosionOn ? erosionRadius.value : '0');
-                    formData.append('decontaminate', document.getElementById('toggleDecontaminate').checked ? 'true' : 'false');
-                    formData.append('softenEdges', document.getElementById('toggleSoften').checked ? 'true' : 'false');
-                    formData.append('minIsland', minIslandSlider.value);
+                    formData.append('erosion', erosionOn ? erosionRadius.value : 'false');
+                    formData.append('decontamination', document.getElementById('toggleDecontaminate').checked ? 'true' : 'false');
+                    formData.append('softening', document.getElementById('toggleSoften').checked ? 'true' : 'false');
+                    formData.append('minIslandSize', minIslandSlider.value);
                     formData.append('upscale', upscaleSlider.value);
                 }
                 
