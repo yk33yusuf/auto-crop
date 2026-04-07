@@ -395,6 +395,30 @@
                     
                     <div class="toggle-row">
                         <div>
+                            <div class="toggle-label">Spill Removal</div>
+                            <div class="toggle-desc">Kenar bg renk sızmasını hedef renge çevirir</div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggleSpill">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    
+                    <div id="spillSliderRow" style="padding: 4px 0 8px 0; display:none;">
+                        <label style="font-size: 12px;">Hedef Renk:</label>
+                        <div style="display:flex; gap:8px; margin: 6px 0;">
+                            <button type="button" onclick="setSpillColor('ffffff')" style="background:#fff; color:#333; border:2px solid #ccc; padding:4px 12px; border-radius:6px; cursor:pointer; font-size:12px; width:auto;">⬜ Beyaz</button>
+                            <button type="button" onclick="setSpillColor('000000')" style="background:#000; color:#fff; border:2px solid #ccc; padding:4px 12px; border-radius:6px; cursor:pointer; font-size:12px; width:auto;">⬛ Siyah</button>
+                            <input type="color" id="spillColorPicker" value="#ffffff" style="width:36px; height:30px; border:none; cursor:pointer; border-radius:4px;">
+                        </div>
+                        <input type="hidden" id="spillColor" value="ffffff">
+                        <label style="font-size: 12px; margin-top:6px; display:block;">Strength: <span class="value-badge" id="spillStrengthValue">80</span>%</label>
+                        <input type="range" id="spillStrength" min="1" max="100" value="80" step="5">
+                        <small>Yüksek = daha agresif renk değiştirme</small>
+                    </div>
+                    
+                    <div class="toggle-row">
+                        <div>
                             <div class="toggle-label">Alpha Gaussian Softening</div>
                             <div class="toggle-desc">Alpha kanalına Gaussian blur uygular</div>
                         </div>
@@ -557,6 +581,21 @@
         });
         document.getElementById('dilationRadius').addEventListener('input', e => document.getElementById('dilationValue').textContent = e.target.value);
         
+        // Spill removal toggle + slider visibility
+        const spillSliderRow = document.getElementById('spillSliderRow');
+        document.getElementById('toggleSpill').addEventListener('change', function() {
+            spillSliderRow.style.display = this.checked ? 'block' : 'none';
+        });
+        document.getElementById('spillStrength').addEventListener('input', e => document.getElementById('spillStrengthValue').textContent = e.target.value);
+        document.getElementById('spillColorPicker').addEventListener('input', e => {
+            setSpillColor(e.target.value.replace('#',''));
+        });
+        
+        function setSpillColor(hex) {
+            document.getElementById('spillColor').value = hex;
+            document.getElementById('spillColorPicker').value = '#' + hex;
+        }
+        
         // AA toggle + slider visibility
         const antiAliasSliderRow = document.getElementById('antiAliasSliderRow');
         document.getElementById('toggleAntiAlias').addEventListener('change', function() {
@@ -643,6 +682,9 @@
                     formData.append('dilation', document.getElementById('toggleDilation').checked ? 'true' : 'false');
                     formData.append('dilationRadius', document.getElementById('dilationRadius').value);
                     formData.append('antiAlias', document.getElementById('toggleAntiAlias').checked ? 'true' : 'false');
+                    formData.append('spillRemoval', document.getElementById('toggleSpill').checked ? 'true' : 'false');
+                    formData.append('spillColor', document.getElementById('spillColor').value);
+                    formData.append('spillStrength', document.getElementById('spillStrength').value);
                     formData.append('antiAliasRadius', document.getElementById('antiAliasRadius').value);
                     formData.append('minIslandSize', minIslandSlider.value);
                     formData.append('upscale', upscaleSlider.value);
