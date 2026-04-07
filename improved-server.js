@@ -540,9 +540,10 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     for (let i = 0; i < mask.length; i++) if (mask[i] === 1) bgCount++;
     console.log(`🌊 Flood-fill: ${bgCount} bg pixels (${(bgCount / mask.length * 100).toFixed(1)}%)`);
     
-    // Step 3: Interior islands
-    const removed = removeInteriorIslands(data, mask, width, height, channels, bgColor, threshold * 1.2, minIslandSize);
-    if (removed > 0) console.log(`🏝️ Interior islands removed: ${removed} pixels`);
+    // Step 3: Interior islands (scale minIslandSize by upscale factor)
+    const effectiveMinIslandSize = minIslandSize * (upscaleFactor * upscaleFactor);
+    const removed = removeInteriorIslands(data, mask, width, height, channels, bgColor, threshold * 1.2, effectiveMinIslandSize);
+    if (removed > 0) console.log(`🏝️ Interior islands removed: ${removed} pixels (minSize: ${effectiveMinIslandSize})`);
     
     // Step 4: Find edge pixels
     const edgePixels = findEdgePixels(mask, width, height);
