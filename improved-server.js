@@ -773,6 +773,31 @@ function edgeRecolor(data, mask, width, height, channels, edgePixels, targetColo
   return result;
 }
 
+
+// Color replace: find fg pixels similar to bg color and recolor them
+// Unlike edgeRecolor, this works anywhere in the image, not just edges
+function colorReplace(data, mask, width, height, channels, bgColor, targetColor, threshold) {
+  const result = Buffer.from(data);
+
+  for (let i = 0; i < width * height; i++) {
+    if (mask[i] === 1) continue; // skip bg (already transparent)
+    const dataIdx = i * channels;
+    const alpha = result[dataIdx + 3];
+    if (alpha === 0) continue;
+
+    const r = result[dataIdx], g = result[dataIdx+1], b = result[dataIdx+2];
+    const dist = deltaE76Fast(r, g, b, bgColor.r, bgColor.g, bgColor.b);
+
+    if (dist <= threshold) {
+      result[dataIdx]     = targetColor.r;
+      result[dataIdx + 1] = targetColor.g;
+      result[dataIdx + 2] = targetColor.b;
+    }
+  }
+
+  return result;
+}
+
 // ============================================
 // SPLIT HELPERS
 // ============================================
@@ -912,6 +937,14 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     const enableAntiAlias = req.body.antiAlias === 'true';
     const enableSpillRemoval = req.body.spillRemoval === 'true';
     const enableEdgeRecolor = req.body.edgeRecolor === 'true';
+    const enableColorReplace = req.body.colorReplace === 'true';
+    const colorReplaceThreshold = Math.min(60, Math.max(1, parseFloat(req.body.colorReplaceThreshold) || 20));
+    const colorReplaceHex = (req.body.colorReplaceTarget || '000000').replace('#', '');
+    const colorReplaceTarget = {
+      r: parseInt(colorReplaceHex.slice(0,2), 16) || 0,
+      g: parseInt(colorReplaceHex.slice(2,4), 16) || 0,
+      b: parseInt(colorReplaceHex.slice(4,6), 16) || 0
+    };
     const edgeRecolorDepth = Math.min(20, Math.max(1, parseInt(req.body.edgeRecolorDepth) || 3));
     const edgeRecolorHex = (req.body.edgeRecolorColor || 'ffffff').replace('#', '');
     const edgeRecolorColor = {
@@ -1006,6 +1039,12 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     if (enableEdgeRecolor) {
       processedData = edgeRecolor(processedData, mask, width, height, channels, edgePixels, edgeRecolorColor, edgeRecolorDepth);
       console.log(`🖌️ Edge recolor applied (#${edgeRecolorHex}, depth:${edgeRecolorDepth}px)`);
+    }
+
+    // Step 6e: Color replace (recolor fg pixels similar to bg color)
+    if (enableColorReplace) {
+      processedData = colorReplace(processedData, mask, width, height, channels, bgColor, colorReplaceTarget, colorReplaceThreshold);
+      console.log(`🖍️ Color replace applied (#${colorReplaceHex}, threshold:${colorReplaceThreshold})`);
     }
 
     // Step 7: Morphological erosion on alpha
