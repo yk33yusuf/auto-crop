@@ -423,6 +423,34 @@ function alphaGaussianBlur(data, width, height, channels, radius) {
 }
 
 // Alpha feather: gradually fade alpha near edges (distance-based)
+// Alpha dilation: expand alpha outward (opposite of erosion)
+// Recovers thin edges lost during processing
+function alphaDilation(data, width, height, channels, radius) {
+  if (radius <= 0) return data;
+  const result = Buffer.from(data);
+  
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * channels;
+      if (result[idx + 3] === 255) continue; // already fully opaque
+      
+      let maxAlpha = data[idx + 3];
+      
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          if (dx * dx + dy * dy > radius * radius) continue; // circle
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+          const nAlpha = data[(ny * width + nx) * channels + 3];
+          if (nAlpha > maxAlpha) maxAlpha = nAlpha;
+        }
+      }
+      result[idx + 3] = maxAlpha;
+    }
+  }
+  return result;
+}
+
 function alphaFeather(data, mask, width, height, channels, featherRadius) {
   if (featherRadius <= 0) return data;
   const result = Buffer.from(data);
@@ -612,18 +640,20 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     const edgeThreshold = parseFloat(req.body.edgeThreshold) || 20;
     const enableErosion = req.body.erosion !== 'false' && req.body.erosion !== '0';
     const erosionRadius = parseInt(req.body.erosionRadius) || 1;
-    const enableDecontamination = req.body.decontamination !== 'false';
-    const enableSoftening = req.body.softening !== 'false';
+    const enableDecontamination = req.body.decontamination === 'true';
+    const enableSoftening = req.body.softening === 'true';
     const softenRadius = Math.min(10, Math.max(0, parseInt(req.body.softenRadius) || 2));
-    const enableFeather = req.body.feather !== 'false';
+    const enableFeather = req.body.feather === 'true';
     const featherRadius = Math.min(20, Math.max(0, parseInt(req.body.featherRadius) || 3));
+    const enableDilation = req.body.dilation === 'true';
+    const dilationRadius = Math.min(5, Math.max(0, parseInt(req.body.dilationRadius) || 1));
     const minIslandSize = parseInt(req.body.minIslandSize) || 100;
     const upscaleFactor = Math.min(4, Math.max(1, parseInt(req.body.upscale) || 1));
     
     console.log('='.repeat(60));
     console.log(`🔍 v3.2 Flood-Fill Processing`);
     console.log(`📊 FloodThreshold: ${threshold} | EdgeThreshold: ${edgeThreshold} | Erosion: ${enableErosion} (${erosionRadius}px)`);
-    console.log(`🎨 Decontamination: ${enableDecontamination} | Softening: ${enableSoftening} (r:${softenRadius}) | Feather: ${enableFeather} (r:${featherRadius})`);
+    console.log(`🎨 Decontamination: ${enableDecontamination} | Softening: ${enableSoftening} (r:${softenRadius}) | Feather: ${enableFeather} (r:${featherRadius}) | Dilation: ${enableDilation} (r:${dilationRadius})`);
     console.log(`🔭 Upscale: ${upscaleFactor}x | MinIslandSize: ${minIslandSize} (effective: ${minIslandSize * upscaleFactor * upscaleFactor})`);
     
     // Load image with alpha (+ optional upscale)
@@ -706,6 +736,12 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     if (enableFeather && featherRadius > 0) {
       processedData = alphaFeather(processedData, mask, width, height, channels, featherRadius);
       console.log(`🪶 Alpha feathering applied (r:${featherRadius})`);
+    }
+    
+    // Step 7d: Alpha dilation (expand alpha outward)
+    if (enableDilation && dilationRadius > 0) {
+      processedData = alphaDilation(processedData, width, height, channels, dilationRadius);
+      console.log(`💡 Alpha dilation applied (r:${dilationRadius})`);
     }
     
     // Step 8: Crop to content (+ downscale back to original resolution)
