@@ -512,6 +512,86 @@ function alphaFeather(data, mask, width, height, channels, featherRadius) {
   return result;
 }
 
+
+// ============================================
+// ALPHA MATTING
+// ============================================
+// Removes bg color contamination from edge pixels
+// even when they are fully opaque (alpha=255)
+// Works by estimating how much bg color leaked into fg pixels
+// based on their color distance from bg vs fg
+
+function alphaMatting(data, mask, width, height, channels, bgColor, edgePixels, mattingRadius, mattingStrength) {
+  if (channels < 4) return data;
+  const result = Buffer.from(data);
+
+  // For each edge pixel, sample nearby confirmed fg pixels to estimate true fg color
+  const dx = [-1,1,0,0,-2,2,0,0,-1,-1,1,1];
+  const dy = [0,0,-1,1,0,0,-2,2,-1,1,-1,1];
+
+  for (const idx of edgePixels) {
+    const x = idx % width;
+    const y = Math.floor(idx / width);
+    const dataIdx = idx * channels;
+
+    const r = data[dataIdx], g = data[dataIdx+1], b = data[dataIdx+2];
+
+    // How similar is this pixel to bg?
+    const distToBg = deltaE76Fast(r, g, b, bgColor.r, bgColor.g, bgColor.b);
+
+    // Sample confirmed fg neighbors to get estimated true fg color
+    let fgR = 0, fgG = 0, fgB = 0, fgCount = 0;
+    for (let radius = 1; radius <= mattingRadius; radius++) {
+      for (let k = 0; k < dx.length; k++) {
+        const nx = x + dx[k] * radius;
+        const ny = y + dy[k] * radius;
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+        const nIdx = ny * width + nx;
+        if (mask[nIdx] === 1) continue; // skip bg
+        const nDataIdx = nIdx * channels;
+        const na = data[nDataIdx + 3];
+        if (na < 200) continue; // only use solidly opaque fg pixels
+        const nr = data[nDataIdx], ng = data[nDataIdx+1], nb = data[nDataIdx+2];
+        const distNToBg = deltaE76Fast(nr, ng, nb, bgColor.r, bgColor.g, bgColor.b);
+        if (distNToBg < 5) continue; // skip pixels too similar to bg
+        fgR += nr; fgG += ng; fgB += nb; fgCount++;
+      }
+      if (fgCount >= 3) break;
+    }
+
+    if (fgCount === 0) continue; // can't estimate fg color
+
+    const estFgR = fgR / fgCount;
+    const estFgG = fgG / fgCount;
+    const estFgB = fgB / fgCount;
+
+    // Estimate alpha: how much of this pixel is fg vs bg?
+    // Using luminance-based estimation
+    const distToBgFull = Math.sqrt((r-bgColor.r)**2 + (g-bgColor.g)**2 + (b-bgColor.b)**2);
+    const distFgToBg = Math.sqrt((estFgR-bgColor.r)**2 + (estFgG-bgColor.g)**2 + (estFgB-bgColor.b)**2);
+
+    if (distFgToBg < 1) continue; // fg and bg too similar, skip
+
+    const estimatedAlpha = Math.min(1, distToBgFull / distFgToBg);
+
+    // Apply matting: blend toward estimated fg color, weighted by strength
+    const strength = mattingStrength / 100;
+    const currentAlpha = result[dataIdx + 3] / 255;
+    const newAlpha = Math.max(estimatedAlpha, currentAlpha * (1 - strength) + estimatedAlpha * strength);
+
+    result[dataIdx + 3] = Math.round(Math.min(255, newAlpha * 255));
+
+    // If alpha dropped significantly, also correct RGB toward true fg
+    if (newAlpha < 0.95) {
+      result[dataIdx]   = Math.min(255, Math.max(0, Math.round(estFgR)));
+      result[dataIdx+1] = Math.min(255, Math.max(0, Math.round(estFgG)));
+      result[dataIdx+2] = Math.min(255, Math.max(0, Math.round(estFgB)));
+    }
+  }
+
+  return result;
+}
+
 // ============================================
 // SPLIT HELPERS
 // ============================================
@@ -647,6 +727,9 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     const enableErosion = req.body.erosion !== 'false' && req.body.erosion !== '0';
     const erosionRadius = parseInt(req.body.erosionRadius) || 1;
     const enableDecontamination = req.body.decontamination === 'true';
+    const enableMatting = req.body.matting === 'true';
+    const mattingRadius = Math.min(5, Math.max(1, parseInt(req.body.mattingRadius) || 2));
+    const mattingStrength = Math.min(100, Math.max(1, parseInt(req.body.mattingStrength) || 80));
     const enableSoftening = req.body.softening === 'true';
     const softenRadius = Math.min(10, Math.max(0, parseInt(req.body.softenRadius) || 2));
     const enableFeather = req.body.feather === 'true';
@@ -659,7 +742,8 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     console.log('='.repeat(60));
     console.log(`🔍 v3.2 Flood-Fill Processing`);
     console.log(`📊 FloodThreshold: ${threshold} | EdgeThreshold: ${edgeThreshold} | Erosion: ${enableErosion} (${erosionRadius}px)`);
-    console.log(`🎨 Decontamination: ${enableDecontamination} | Softening: ${enableSoftening} (r:${softenRadius}) | Feather: ${enableFeather} (r:${featherRadius}) | Dilation: ${enableDilation} (r:${dilationRadius})`);
+    console.log(`🎨 Decontamination: ${enableDecontamination} | Matting: ${enableMatting} (r:${mattingRadius}, s:${mattingStrength}%)`);
+    console.log(`✨ Softening: ${enableSoftening} (r:${softenRadius}) | Feather: ${enableFeather} (r:${featherRadius}) | Dilation: ${enableDilation} (r:${dilationRadius})`);
     console.log(`🔭 Upscale: ${upscaleFactor}x | MinIslandSize: ${minIslandSize} (effective: ${minIslandSize * upscaleFactor * upscaleFactor})`);
     
     // Load image with alpha (+ optional upscale)
@@ -706,6 +790,12 @@ app.post('/crop', upload.single('image'), async (req, res) => {
       processedData = colorDecontaminate(processedData, mask, width, height, channels, bgColor, edgePixels);
     }
     
+    // Step 6b: Alpha matting (remove bg color halo from opaque edge pixels)
+    if (enableMatting) {
+      processedData = alphaMatting(processedData, mask, width, height, channels, bgColor, edgePixels, mattingRadius, mattingStrength);
+      console.log(`🧵 Alpha matting applied (r:${mattingRadius}, strength:${mattingStrength}%)`);
+    }
+
     // Step 7: Morphological erosion on alpha
     if (enableErosion) {
       for (let pass = 0; pass < erosionRadius; pass++) {
