@@ -419,6 +419,30 @@
                     
                     <div class="toggle-row">
                         <div>
+                            <div class="toggle-label">Edge Recolor</div>
+                            <div class="toggle-desc">Kenar piksellerini seçilen renge boyar</div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggleEdgeRecolor">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    
+                    <div id="edgeRecolorRow" style="padding: 4px 0 8px 0; display:none;">
+                        <label style="font-size: 12px;">Renk:</label>
+                        <div style="display:flex; gap:8px; margin: 6px 0;">
+                            <button type="button" onclick="setRecolorColor('ffffff')" style="background:#fff; color:#333; border:2px solid #ccc; padding:4px 12px; border-radius:6px; cursor:pointer; font-size:12px; width:auto;">⬜ Beyaz</button>
+                            <button type="button" onclick="setRecolorColor('000000')" style="background:#000; color:#fff; border:2px solid #ccc; padding:4px 12px; border-radius:6px; cursor:pointer; font-size:12px; width:auto;">⬛ Siyah</button>
+                            <input type="color" id="edgeRecolorPicker" value="#ffffff" style="width:36px; height:30px; border:none; cursor:pointer; border-radius:4px;">
+                        </div>
+                        <input type="hidden" id="edgeRecolorColor" value="ffffff">
+                        <label style="font-size: 12px; margin-top:6px; display:block;">Derinlik: <span class="value-badge" id="edgeRecolorDepthValue">3</span> px</label>
+                        <input type="range" id="edgeRecolorDepth" min="1" max="20" value="3" step="1">
+                        <small>Kenardan kaç piksel derinliğe kadar boyansın</small>
+                    </div>
+
+                    <div class="toggle-row">
+                        <div>
                             <div class="toggle-label">Alpha Gaussian Softening</div>
                             <div class="toggle-desc">Alpha kanalına Gaussian blur uygular</div>
                         </div>
@@ -581,6 +605,19 @@
         });
         document.getElementById('dilationRadius').addEventListener('input', e => document.getElementById('dilationValue').textContent = e.target.value);
         
+        // Edge recolor toggle
+        const edgeRecolorRow = document.getElementById('edgeRecolorRow');
+        document.getElementById('toggleEdgeRecolor').addEventListener('change', function() {
+            edgeRecolorRow.style.display = this.checked ? 'block' : 'none';
+        });
+        document.getElementById('edgeRecolorDepth').addEventListener('input', e => document.getElementById('edgeRecolorDepthValue').textContent = e.target.value);
+        document.getElementById('edgeRecolorPicker').addEventListener('input', e => setRecolorColor(e.target.value.replace('#','')));
+        
+        function setRecolorColor(hex) {
+            document.getElementById('edgeRecolorColor').value = hex;
+            document.getElementById('edgeRecolorPicker').value = '#' + hex;
+        }
+        
         // Spill removal toggle + slider visibility
         const spillSliderRow = document.getElementById('spillSliderRow');
         document.getElementById('toggleSpill').addEventListener('change', function() {
@@ -683,6 +720,9 @@
                     formData.append('dilationRadius', document.getElementById('dilationRadius').value);
                     formData.append('antiAlias', document.getElementById('toggleAntiAlias').checked ? 'true' : 'false');
                     formData.append('spillRemoval', document.getElementById('toggleSpill').checked ? 'true' : 'false');
+                    formData.append('edgeRecolor', document.getElementById('toggleEdgeRecolor').checked ? 'true' : 'false');
+                    formData.append('edgeRecolorColor', document.getElementById('edgeRecolorColor').value);
+                    formData.append('edgeRecolorDepth', document.getElementById('edgeRecolorDepth').value);
                     formData.append('spillColor', document.getElementById('spillColor').value);
                     formData.append('spillStrength', document.getElementById('spillStrength').value);
                     formData.append('antiAliasRadius', document.getElementById('antiAliasRadius').value);
