@@ -376,6 +376,25 @@
                     
                     <div class="toggle-row">
                         <div>
+                            <div class="toggle-label">Alpha Matting</div>
+                            <div class="toggle-desc">Kenar piksellerindeki bg renk halesini temizler</div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggleMatting">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    
+                    <div id="mattingSliderRow" style="padding: 4px 0 8px 0; display:none;">
+                        <label style="font-size: 12px;">Matting Radius: <span class="value-badge" id="mattingRadiusValue">2</span> px</label>
+                        <input type="range" id="mattingRadius" min="1" max="5" value="2" step="1">
+                        <label style="font-size: 12px; margin-top:6px; display:block;">Strength: <span class="value-badge" id="mattingStrengthValue">80</span>%</label>
+                        <input type="range" id="mattingStrength" min="1" max="100" value="80" step="5">
+                        <small>Yüksek strength = daha agresif hale temizleme</small>
+                    </div>
+                    
+                    <div class="toggle-row">
+                        <div>
                             <div class="toggle-label">Alpha Gaussian Softening</div>
                             <div class="toggle-desc">Alpha kanalına Gaussian blur uygular</div>
                         </div>
@@ -507,6 +526,14 @@
         document.getElementById('softenRadius').addEventListener('input', e => document.getElementById('softenValue').textContent = e.target.value);
         document.getElementById('featherRadius').addEventListener('input', e => document.getElementById('featherValue').textContent = e.target.value);
         
+        // Matting toggle + slider visibility
+        const mattingSliderRow = document.getElementById('mattingSliderRow');
+        document.getElementById('toggleMatting').addEventListener('change', function() {
+            mattingSliderRow.style.display = this.checked ? 'block' : 'none';
+        });
+        document.getElementById('mattingRadius').addEventListener('input', e => document.getElementById('mattingRadiusValue').textContent = e.target.value);
+        document.getElementById('mattingStrength').addEventListener('input', e => document.getElementById('mattingStrengthValue').textContent = e.target.value);
+        
         // Dilation toggle + slider visibility
         const dilationSliderRow = document.getElementById('dilationSliderRow');
         document.getElementById('toggleDilation').addEventListener('change', function() {
@@ -583,6 +610,9 @@
                     const erosionOn = document.getElementById('toggleErosion').checked;
                     formData.append('erosion', erosionOn ? erosionRadius.value : 'false');
                     formData.append('decontamination', document.getElementById('toggleDecontaminate').checked ? 'true' : 'false');
+                    formData.append('matting', document.getElementById('toggleMatting').checked ? 'true' : 'false');
+                    formData.append('mattingRadius', document.getElementById('mattingRadius').value);
+                    formData.append('mattingStrength', document.getElementById('mattingStrength').value);
                     formData.append('softening', document.getElementById('toggleSoften').checked ? 'true' : 'false');
                     formData.append('softenRadius', document.getElementById('softenRadius').value);
                     formData.append('feather', document.getElementById('toggleFeather').checked ? 'true' : 'false');
