@@ -690,6 +690,37 @@ function applyAntiAliasing(data, mask, width, height, channels, radius) {
   return result;
 }
 
+
+// Spill removal: replace bg color contamination on edges with target color
+function spillRemoval(data, mask, width, height, channels, bgColor, edgePixels, targetColor, strength) {
+  if (channels < 4) return data;
+  const result = Buffer.from(data);
+  const s = strength / 100;
+
+  for (const idx of edgePixels) {
+    const dataIdx = idx * channels;
+    const r = result[dataIdx], g = result[dataIdx+1], b = result[dataIdx+2];
+    const alpha = result[dataIdx+3];
+
+    if (alpha === 0) continue;
+
+    // How similar is this pixel to bg?
+    const distToBg = deltaE76Fast(r, g, b, bgColor.r, bgColor.g, bgColor.b);
+    const maxDist = 50;
+    const bgInfluence = Math.max(0, 1 - distToBg / maxDist); // 1 = very similar to bg, 0 = not similar
+
+    if (bgInfluence < 0.05) continue; // not contaminated
+
+    // Blend toward target color based on bg influence and strength
+    const blend = bgInfluence * s;
+    result[dataIdx]     = Math.round(r * (1 - blend) + targetColor.r * blend);
+    result[dataIdx + 1] = Math.round(g * (1 - blend) + targetColor.g * blend);
+    result[dataIdx + 2] = Math.round(b * (1 - blend) + targetColor.b * blend);
+  }
+
+  return result;
+}
+
 // ============================================
 // SPLIT HELPERS
 // ============================================
@@ -827,6 +858,14 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     const enableDecontamination = req.body.decontamination === 'true';
     const enableMatting = req.body.matting === 'true';
     const enableAntiAlias = req.body.antiAlias === 'true';
+    const enableSpillRemoval = req.body.spillRemoval === 'true';
+    const spillStrength = Math.min(100, Math.max(1, parseInt(req.body.spillStrength) || 80));
+    const spillColorHex = (req.body.spillColor || 'ffffff').replace('#', '');
+    const spillColor = {
+      r: parseInt(spillColorHex.slice(0,2), 16) || 255,
+      g: parseInt(spillColorHex.slice(2,4), 16) || 255,
+      b: parseInt(spillColorHex.slice(4,6), 16) || 255
+    };
     const antiAliasRadius = Math.min(3, Math.max(0.1, parseFloat(req.body.antiAliasRadius) || 0.5));
     const mattingRadius = Math.min(5, Math.max(1, parseInt(req.body.mattingRadius) || 2));
     const mattingStrength = Math.min(100, Math.max(1, parseInt(req.body.mattingStrength) || 80));
@@ -844,7 +883,7 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     console.log(`📊 FloodThreshold: ${threshold} | EdgeThreshold: ${edgeThreshold} | Erosion: ${enableErosion} (${erosionRadius}px)`);
     console.log(`🎨 Decontamination: ${enableDecontamination} | Matting: ${enableMatting} (r:${mattingRadius}, s:${mattingStrength}%)`);
     console.log(`✨ Softening: ${enableSoftening} (r:${softenRadius}) | Feather: ${enableFeather} (r:${featherRadius}) | Dilation: ${enableDilation} (r:${dilationRadius})`);
-    console.log(`🔲 AntiAlias: ${enableAntiAlias} (r:${antiAliasRadius})`);
+    console.log(`🔲 AntiAlias: ${enableAntiAlias} (r:${antiAliasRadius}) | SpillRemoval: ${enableSpillRemoval} (s:${spillStrength}%, color:#${spillColorHex})`);
     console.log(`🔭 Upscale: ${upscaleFactor}x | MinIslandSize: ${minIslandSize} (effective: ${minIslandSize * upscaleFactor * upscaleFactor})`);
     
     // Load image with alpha (+ optional upscale)
@@ -895,6 +934,12 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     if (enableMatting) {
       processedData = alphaMatting(processedData, mask, width, height, channels, bgColor, edgePixels, mattingRadius, mattingStrength);
       console.log(`🧵 Alpha matting applied (r:${mattingRadius}, strength:${mattingStrength}%)`);
+    }
+
+    // Step 6c: Spill removal (replace bg color contamination with target color)
+    if (enableSpillRemoval) {
+      processedData = spillRemoval(processedData, mask, width, height, channels, bgColor, edgePixels, spillColor, spillStrength);
+      console.log(`🎨 Spill removal applied (#${spillColorHex}, strength:${spillStrength}%)`);
     }
 
     // Step 7: Morphological erosion on alpha
