@@ -376,13 +376,36 @@
                     
                     <div class="toggle-row">
                         <div>
-                            <div class="toggle-label">Alpha Edge Softening</div>
-                            <div class="toggle-desc">Kenar geçişlerini yumuşatır</div>
+                            <div class="toggle-label">Alpha Gaussian Softening</div>
+                            <div class="toggle-desc">Alpha kanalına Gaussian blur uygular</div>
                         </div>
                         <label class="switch">
                             <input type="checkbox" id="toggleSoften" checked>
                             <span class="slider"></span>
                         </label>
+                    </div>
+                    
+                    <div id="softenSliderRow" style="padding: 4px 0 8px 0;">
+                        <label style="font-size: 12px;">Soften Radius: <span class="value-badge" id="softenValue">2</span> px</label>
+                        <input type="range" id="softenRadius" min="1" max="10" value="2" step="1">
+                        <small>1 = hafif • 5 = orta • 10 = çok smooth</small>
+                    </div>
+                    
+                    <div class="toggle-row">
+                        <div>
+                            <div class="toggle-label">Alpha Feathering</div>
+                            <div class="toggle-desc">Kenara yakın pikselleri mesafeye göre soldurur</div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggleFeather">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    
+                    <div id="featherSliderRow" style="padding: 4px 0 8px 0; display:none;">
+                        <label style="font-size: 12px;">Feather Radius: <span class="value-badge" id="featherValue">3</span> px</label>
+                        <input type="range" id="featherRadius" min="1" max="20" value="3" step="1">
+                        <small>1 = ince • 10 = geniş fade</small>
                     </div>
                 </div>
             </div>
@@ -450,6 +473,22 @@
         document.getElementById('toggleErosion').addEventListener('change', function() {
             erosionSliderRow.style.display = this.checked ? 'block' : 'none';
         });
+        
+        // Soften slider visibility
+        const softenSliderRow = document.getElementById('softenSliderRow');
+        document.getElementById('toggleSoften').addEventListener('change', function() {
+            softenSliderRow.style.display = this.checked ? 'block' : 'none';
+        });
+        
+        // Feather toggle + slider visibility
+        const featherSliderRow = document.getElementById('featherSliderRow');
+        document.getElementById('toggleFeather').addEventListener('change', function() {
+            featherSliderRow.style.display = this.checked ? 'block' : 'none';
+        });
+        
+        // Slider value displays
+        document.getElementById('softenRadius').addEventListener('input', e => document.getElementById('softenValue').textContent = e.target.value);
+        document.getElementById('featherRadius').addEventListener('input', e => document.getElementById('featherValue').textContent = e.target.value);
         
         // Trim-only seçilince post-processing'i disable et
         document.querySelectorAll('input[name="processingMethod"]').forEach(radio => {
@@ -521,6 +560,9 @@
                     formData.append('erosion', erosionOn ? erosionRadius.value : 'false');
                     formData.append('decontamination', document.getElementById('toggleDecontaminate').checked ? 'true' : 'false');
                     formData.append('softening', document.getElementById('toggleSoften').checked ? 'true' : 'false');
+                    formData.append('softenRadius', document.getElementById('softenRadius').value);
+                    formData.append('feather', document.getElementById('toggleFeather').checked ? 'true' : 'false');
+                    formData.append('featherRadius', document.getElementById('featherRadius').value);
                     formData.append('minIslandSize', minIslandSlider.value);
                     formData.append('upscale', upscaleSlider.value);
                 }
