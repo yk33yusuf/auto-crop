@@ -302,10 +302,15 @@
             <!-- Sol: Threshold + Method -->
             <div>
                 <div class="control-group" style="margin-bottom: 16px;">
-                    <h4>🎚️ Sensitivity Threshold</h4>
-                    <input type="range" id="threshold" min="0" max="50" value="15" step="1">
-                    <div>Değer: <span class="value-badge" id="thresholdValue">15</span></div>
-                    <small>0 = en hassas • 15 = önerilen • 30+ = toleranslı</small>
+                    <h4>🎚️ Flood Threshold</h4>
+                    <input type="range" id="threshold" min="0" max="30" value="8" step="1">
+                    <div>Değer: <span class="value-badge" id="thresholdValue">8</span></div>
+                    <small>Arka planı ne kadar agresif sil • Düşük = temkinli • Yüksek = agresif</small>
+                    
+                    <h4 style="margin-top:14px;">🎨 Edge Threshold</h4>
+                    <input type="range" id="edgeThreshold" min="5" max="60" value="20" step="1">
+                    <div>Değer: <span class="value-badge" id="edgeThresholdValue">20</span></div>
+                    <small>Kenar geçiş yumuşatma • Yüksek = daha smooth kenar</small>
                 </div>
                 
                 <div class="control-group">
@@ -410,6 +415,8 @@
         const uploadSection = document.getElementById('uploadSection');
         const thresholdSlider = document.getElementById('threshold');
         const thresholdValue = document.getElementById('thresholdValue');
+        const edgeThresholdSlider = document.getElementById('edgeThreshold');
+        const edgeThresholdValue = document.getElementById('edgeThresholdValue');
         const erosionRadius = document.getElementById('erosionRadius');
         const erosionValue = document.getElementById('erosionValue');
         const processBtn = document.getElementById('processBtn');
@@ -428,6 +435,7 @@
         
         // Slider updates
         thresholdSlider.addEventListener('input', e => thresholdValue.textContent = e.target.value);
+        edgeThresholdSlider.addEventListener('input', e => edgeThresholdValue.textContent = e.target.value);
         erosionRadius.addEventListener('input', e => erosionValue.textContent = e.target.value);
         
         const minIslandSlider = document.getElementById('minIsland');
@@ -501,6 +509,7 @@
                 const formData = new FormData();
                 formData.append('image', selectedFile);
                 formData.append('threshold', thresholdSlider.value);
+                formData.append('edgeThreshold', edgeThresholdSlider.value);
                 
                 let endpoint = '/crop';
                 
