@@ -592,6 +592,104 @@ function alphaMatting(data, mask, width, height, channels, bgColor, edgePixels, 
   return result;
 }
 
+
+// ============================================
+// ANTI-ALIASING
+// ============================================
+// Applies supersampling-style smoothing to jagged edges
+// by blurring both alpha and RGB channels at edge pixels
+
+function applyAntiAliasing(data, mask, width, height, channels, radius) {
+  if (radius <= 0) return data;
+  const result = Buffer.from(data);
+  const sigma = radius;
+  const size = Math.ceil(radius * 3) * 2 + 1;
+  const half = Math.floor(size / 2);
+
+  // Gaussian kernel
+  const kernel = [];
+  let kernelSum = 0;
+  for (let i = 0; i < size; i++) {
+    const x = i - half;
+    const val = Math.exp(-(x * x) / (2 * sigma * sigma));
+    kernel.push(val);
+    kernelSum += val;
+  }
+  for (let i = 0; i < size; i++) kernel[i] /= kernelSum;
+
+  // Find edge pixels (fg pixels adjacent to bg or transparent)
+  const isEdge = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      if (mask[idx] === 1) continue; // bg
+      // Check if any neighbor is bg
+      let hasEdge = false;
+      for (let dy = -half; dy <= half; dy++) {
+        for (let dx = -half; dx <= half; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || nx >= width || ny < 0 || ny >= height) { hasEdge = true; break; }
+          if (mask[ny * width + nx] === 1) { hasEdge = true; break; }
+        }
+        if (hasEdge) break;
+      }
+      if (hasEdge) isEdge[idx] = 1;
+    }
+  }
+
+  // Apply Gaussian blur to RGBA at edge pixels only
+  const temp = Buffer.from(data);
+
+  // Horizontal pass
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      if (!isEdge[idx]) continue;
+      let r = 0, g = 0, b = 0, a = 0;
+      for (let k = 0; k < size; k++) {
+        const nx = Math.min(width - 1, Math.max(0, x + k - half));
+        const nDataIdx = (y * width + nx) * channels;
+        const w = kernel[k];
+        r += data[nDataIdx]     * w;
+        g += data[nDataIdx + 1] * w;
+        b += data[nDataIdx + 2] * w;
+        a += data[nDataIdx + 3] * w;
+      }
+      const dataIdx = idx * channels;
+      temp[dataIdx]     = Math.round(r);
+      temp[dataIdx + 1] = Math.round(g);
+      temp[dataIdx + 2] = Math.round(b);
+      temp[dataIdx + 3] = Math.round(a);
+    }
+  }
+
+  // Vertical pass
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      if (!isEdge[idx]) continue;
+      let r = 0, g = 0, b = 0, a = 0;
+      for (let k = 0; k < size; k++) {
+        const ny = Math.min(height - 1, Math.max(0, y + k - half));
+        const nDataIdx = (ny * width + x) * channels;
+        const w = kernel[k];
+        r += temp[nDataIdx]     * w;
+        g += temp[nDataIdx + 1] * w;
+        b += temp[nDataIdx + 2] * w;
+        a += temp[nDataIdx + 3] * w;
+      }
+      const dataIdx = idx * channels;
+      result[dataIdx]     = Math.round(r);
+      result[dataIdx + 1] = Math.round(g);
+      result[dataIdx + 2] = Math.round(b);
+      result[dataIdx + 3] = Math.round(a);
+    }
+  }
+
+  return result;
+}
+
 // ============================================
 // SPLIT HELPERS
 // ============================================
@@ -728,6 +826,8 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     const erosionRadius = parseInt(req.body.erosionRadius) || 1;
     const enableDecontamination = req.body.decontamination === 'true';
     const enableMatting = req.body.matting === 'true';
+    const enableAntiAlias = req.body.antiAlias === 'true';
+    const antiAliasRadius = Math.min(3, Math.max(0.1, parseFloat(req.body.antiAliasRadius) || 0.5));
     const mattingRadius = Math.min(5, Math.max(1, parseInt(req.body.mattingRadius) || 2));
     const mattingStrength = Math.min(100, Math.max(1, parseInt(req.body.mattingStrength) || 80));
     const enableSoftening = req.body.softening === 'true';
@@ -744,6 +844,7 @@ app.post('/crop', upload.single('image'), async (req, res) => {
     console.log(`📊 FloodThreshold: ${threshold} | EdgeThreshold: ${edgeThreshold} | Erosion: ${enableErosion} (${erosionRadius}px)`);
     console.log(`🎨 Decontamination: ${enableDecontamination} | Matting: ${enableMatting} (r:${mattingRadius}, s:${mattingStrength}%)`);
     console.log(`✨ Softening: ${enableSoftening} (r:${softenRadius}) | Feather: ${enableFeather} (r:${featherRadius}) | Dilation: ${enableDilation} (r:${dilationRadius})`);
+    console.log(`🔲 AntiAlias: ${enableAntiAlias} (r:${antiAliasRadius})`);
     console.log(`🔭 Upscale: ${upscaleFactor}x | MinIslandSize: ${minIslandSize} (effective: ${minIslandSize * upscaleFactor * upscaleFactor})`);
     
     // Load image with alpha (+ optional upscale)
@@ -840,6 +941,12 @@ app.post('/crop', upload.single('image'), async (req, res) => {
       console.log(`💡 Alpha dilation applied (r:${dilationRadius})`);
     }
     
+    // Step 7e: Anti-aliasing on edges
+    if (enableAntiAlias) {
+      processedData = applyAntiAliasing(processedData, mask, width, height, channels, antiAliasRadius);
+      console.log(`🔲 Anti-aliasing applied (r:${antiAliasRadius})`);
+    }
+
     // Step 8: Crop to content (+ downscale back to original resolution)
     labCache.clear();
     
